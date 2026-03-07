@@ -130,7 +130,7 @@ export const RelationshipTableView = ({ relationships, isMobile, onRefresh }: Pr
     return familyView.find((e) => (e.family._id || e.family.id) === selectedId) || null;
   }, [activeTab, selectedId, familyView]);
 
-  const exploringLabel = activeTab === 'caregiver' ? 'Caregiver View' : activeTab === 'patient' ? 'Patient View' : 'Family View';
+  const exploringLabel = activeTab === 'caregiver' ? 'Caregivers' : activeTab === 'patient' ? 'Patients' : 'Family Members';
   const exploringChip =
     activeTab === 'caregiver'
       ? 'Exploring Caregiver Relationships'
@@ -152,7 +152,7 @@ export const RelationshipTableView = ({ relationships, isMobile, onRefresh }: Pr
           {(['caregiver', 'patient', 'family'] as Tab[]).map((tab) => {
             const count =
               tab === 'caregiver' ? caregiverListBase.length : tab === 'patient' ? patientListBase.length : familyListBase.length;
-            const label = tab === 'caregiver' ? 'Caregiver View' : tab === 'patient' ? 'Patient View' : 'Family View';
+            const label = tab === 'caregiver' ? 'Caregivers' : tab === 'patient' ? 'Patients' : 'Family Members';
             return (
               <button
                 key={tab}
