@@ -112,7 +112,7 @@ export const RelationshipManagement = () => {
         </div>
 
         <div className="flex gap-2">
-          {isMobile ? (
+          {/* {isMobile ? (
             <>
               <Button size="sm" variant={viewMode === 'table' ? 'default' : 'outline'} onClick={() => setViewMode('table')}>
                 <TableCellsSplit className="w-3.5 h-3.5" />
@@ -130,7 +130,7 @@ export const RelationshipManagement = () => {
                 <Network className="w-3.5 h-3.5" /> Graph View
               </Button>
             </>
-          )}
+          )} */}
 
           <AddRelationshipDialog
             open={open}
