@@ -160,6 +160,19 @@ export const api = {
                 headers: authHeaders(token),
             }),
         ),
+
+    postForm: (path: string, formData: FormData) =>
+        requestWithRefresh(token => {
+            // Do NOT include Content-Type — browser sets multipart boundary automatically
+            const headers: Record<string, string> = {};
+            const t = token ?? getToken();
+            if (t) headers['Authorization'] = `Bearer ${t}`;
+            return fetch(`${API_URL}${path}`, {
+                method: 'POST',
+                headers,
+                body: formData,
+            });
+        }),
 };
 
 export { API_URL };

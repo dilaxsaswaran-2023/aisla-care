@@ -111,16 +111,30 @@ def get_patients(
 
     patients = db.query(User).filter(User.id.in_(patient_ids)).all()
 
+    # Family members linked to the caregiver's patients
     family_rels = db.query(Relationship).filter(
         Relationship.patient_id.in_(patient_ids),
         Relationship.relationship_type == "family",
     ).all()
-    family_ids = [r.related_user_id for r in family_rels]
+
+    # Build mapping: family_member_id → patient_name
+    patient_map = {str(p.id): p.full_name for p in patients}
+    fm_to_patient: dict[str, str] = {}
+    for rel in family_rels:
+        fm_to_patient[str(rel.related_user_id)] = patient_map.get(str(rel.patient_id), "Patient")
+
+    family_ids = list({r.related_user_id for r in family_rels})
     family_members = db.query(User).filter(User.id.in_(family_ids)).all()
+
+    family_result = []
+    for f in family_members:
+        fd = f.to_dict()
+        fd["patient_name"] = fm_to_patient.get(str(f.id), "")
+        family_result.append(fd)
 
     return {
         "patients": [p.to_dict() for p in patients],
-        "familyMembers": [f.to_dict() for f in family_members],
+        "familyMembers": family_result,
     }
 
 

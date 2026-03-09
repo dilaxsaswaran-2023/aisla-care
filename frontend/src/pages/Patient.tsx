@@ -4,7 +4,7 @@ import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { AlertCircle, Bell, MessageCircle, Heart, LogOut, User, Phone, Users, ArrowLeft, ChevronRight } from "lucide-react";
+import { AlertCircle, Bell, MessageCircle, Heart, LogOut, User, Phone, Users, ArrowLeft, ChevronRight, MessageSquare } from "lucide-react";
 import BudiiChat from "@/components/patient/BudiiChat";
 import RemindersList from "@/components/patient/RemindersList";
 import ChatInterface from "@/components/chat/ChatInterface";
@@ -18,35 +18,65 @@ interface Relationship {
   related_user_name: string;
 }
 
+interface ChatContact {
+  id: string;
+  name: string;
+}
+
 const Patient = () => {
   const { user, signOut } = useAuth();
   const [showBudii, setShowBudii] = useState(false);
   const [showChat, setShowChat] = useState(false);
   const [showCall, setShowCall] = useState(false);
   const [caregiverId, setCaregiverId] = useState<string | null>(null);
+  const [chatContact, setChatContact] = useState<ChatContact | null>(null);
   const [relationships, setRelationships] = useState<Relationship[]>([]);
   const { toast } = useToast();
 
   const loadRelationships = async () => {
     try {
-      const data = await api.get('/relationships');
+      const data = await api.get('/relationships') as any[];
       if (data && data.length > 0) {
-        const formatted = data.map((r: any) => ({
-          id: r.id,
-          related_user_id: r.related_user_id,
-          relationship_type: r.relationship_type,
-          related_user_name: r.related_user_name || 'Care Team Member'
-        }));
+        const formatted: Relationship[] = [];
+
+        for (const group of data) {
+          // Extract caregiver
+          if (group.caregiver?._id) {
+            formatted.push({
+              id: group.caregiver._id,
+              related_user_id: group.caregiver._id,
+              relationship_type: 'caregiver',
+              related_user_name: group.caregiver.full_name || 'Caregiver',
+            });
+          }
+
+          // Extract family members from patients array
+          for (const patientGroup of group.patients || []) {
+            for (const fm of patientGroup.family_members || []) {
+              if (fm._id) {
+                formatted.push({
+                  id: fm._id,
+                  related_user_id: fm._id,
+                  relationship_type: fm.role || 'family',
+                  related_user_name: fm.full_name || 'Family Member',
+                });
+              }
+            }
+          }
+        }
+
         setRelationships(formatted);
-        
-        const caregiver = formatted.find((r: any) => r.relationship_type === 'caregiver');
-        if (caregiver) setCaregiverId(caregiver.related_user_id);
+
+        // Set caregiver from first caregiver relationship
+        const cg = formatted.find(r => r.relationship_type === 'caregiver');
+        if (cg) {
+          setCaregiverId(cg.related_user_id);
+          setChatContact({ id: cg.related_user_id, name: cg.related_user_name });
+        }
       }
     } catch (error) {
       console.error('Error loading relationships:', error);
     }
-    
-    if (!caregiverId) setCaregiverId('demo-caregiver');
   };
 
   const startGPSTracking = () => {
@@ -99,12 +129,12 @@ const Patient = () => {
     );
   }
 
-  if (showChat && caregiverId) {
+  if (showChat && chatContact) {
     return (
       <PatientShell onSignOut={signOut}>
         <BackButton onClick={() => setShowChat(false)} />
         <div className="h-[calc(100vh-180px)]">
-          <ChatInterface recipientId={caregiverId} recipientName="Your Caregiver" />
+          <ChatInterface recipientId={chatContact.id} recipientName={chatContact.name} />
         </div>
       </PatientShell>
     );
@@ -120,7 +150,16 @@ const Patient = () => {
 
   const actions = [
     { label: "Talk to Budii", desc: "Your friendly AI assistant", icon: MessageCircle, color: "bg-primary/10 text-primary", onClick: () => setShowBudii(true) },
-    { label: "Chat with Caregiver", desc: "Send text messages", icon: User, color: "bg-success/10 text-success", onClick: () => setShowChat(true) },
+    {
+      label: "Chat with Caregiver",
+      desc: chatContact ? `Message ${chatContact.name}` : "Send text messages",
+      icon: User,
+      color: "bg-success/10 text-success",
+      onClick: () => {
+        if (chatContact) setShowChat(true);
+        else toast({ title: "No caregiver assigned", description: "You don't have a caregiver linked yet.", variant: "destructive" });
+      }
+    },
     { label: "Call Caregiver", desc: "Start a voice call", icon: Phone, color: "bg-primary/10 text-primary", onClick: () => setShowCall(true) },
   ];
 
@@ -201,6 +240,18 @@ const Patient = () => {
                         {rel.relationship_type === 'caregiver' ? 'Caregiver' : 'Family'}
                       </Badge>
                     </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5 shrink-0"
+                      onClick={() => {
+                        setChatContact({ id: rel.related_user_id, name: rel.related_user_name });
+                        setShowChat(true);
+                      }}
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" />
+                      Chat
+                    </Button>
                   </div>
                 ))}
               </div>
