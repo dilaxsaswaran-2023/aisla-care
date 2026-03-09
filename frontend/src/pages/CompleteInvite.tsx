@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
+import { CountryCodePicker } from '@/components/ui/CountryCodePicker';
 import { useToast } from '@/hooks/use-toast';
 
 const CompleteInvite = () => {
@@ -61,10 +62,17 @@ const CompleteInvite = () => {
             <Label>New Password</Label>
             <Input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
           </div>
-          <div>
-            <Label>Contact</Label>
-            <div className="flex gap-2">
-              <Input placeholder="Country code" value={phoneCountry} onChange={(e) => setPhoneCountry(e.target.value)} className="w-28" />
+          <div className="flex gap-2">
+            <div className="w-40">
+              <CountryCodePicker
+                value={phoneCountry || '44'}
+                onChange={setPhoneCountry}
+                label="Country Code"
+                placeholder="Search countries..."
+              />
+            </div>
+            <div className="flex-1">
+              <Label>Phone Number</Label>
               <Input placeholder="Phone number" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} />
             </div>
           </div>

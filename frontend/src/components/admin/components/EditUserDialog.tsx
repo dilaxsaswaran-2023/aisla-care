@@ -3,6 +3,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { CountryCodePicker } from '@/components/ui/CountryCodePicker';
 import { ChevronDown, Check, X } from 'lucide-react';
 
 interface EditUserDialogProps {
@@ -91,15 +92,17 @@ export const EditUserDialog = ({
               />
             </div>
 
-            <div>
-              <Label>Contact</Label>
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Country code (e.g. 44)"
-                  value={(editFormData as any).phone_country || ''}
-                  onChange={(e) => setEditFormData({ ...editFormData, phone_country: e.target.value })}
-                  className="w-28"
+            <div className="flex gap-2">
+              <div className="w-40">
+                <CountryCodePicker
+                  value={(editFormData as any).phone_country || '44'}
+                  onChange={(code) => setEditFormData({ ...editFormData, phone_country: code })}
+                  label="Country Code"
+                  placeholder="Search countries..."
                 />
+              </div>
+              <div className="flex-1">
+                <Label>Phone Number</Label>
                 <Input
                   placeholder="Phone number"
                   value={(editFormData as any).phone_number || ''}
