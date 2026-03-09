@@ -42,7 +42,7 @@ const Auth = () => {
         switch (role) {
           case 'super_admin': navigate('/super-admin'); break;
           case 'admin': navigate('/admin'); break;
-          case 'caregiver': navigate('/dashboard'); break;
+          case 'caregiver': navigate('/caregiver'); break;
           case 'patient': navigate('/patient'); break;
           case 'family': navigate('/family'); break;
           default: navigate('/');
