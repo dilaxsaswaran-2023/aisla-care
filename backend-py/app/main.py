@@ -23,6 +23,7 @@ from app.routes.relationships import router as relationships_router
 from app.routes.reminders import router as reminders_router
 from app.routes.audit_logs import router as audit_logs_router
 from app.routes.consent_records import router as consent_records_router
+from app.routes.geofence import router as geofence_router
 from app.routes.ai import router as ai_router
 
 settings = get_settings()
@@ -209,6 +210,7 @@ app.include_router(relationships_router)
 app.include_router(reminders_router)
 app.include_router(audit_logs_router)
 app.include_router(consent_records_router)
+app.include_router(geofence_router)
 app.include_router(ai_router)
 
 

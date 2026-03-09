@@ -6,10 +6,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { UserPlus, MessageSquare, Phone, MapPin, Activity, ChevronDown } from 'lucide-react';
+import { UserPlus, MessageSquare, Phone, MapPin, Activity, ChevronDown, Settings } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import GeofenceSettingsDialog from './GeofenceSettingsDialog';
 import { useAuth } from '@/contexts/AuthContext';
 import ChatInterface from '@/components/chat/ChatInterface';
+import { Switch } from '@/components/ui/switch';
 
 interface Patient {
   id: string;
@@ -18,6 +20,9 @@ interface Patient {
   address: string;
   email: string;
   role: string;
+  is_geofencing?: boolean;
+  location_boundary?: { latitude: number; longitude: number };
+  boundary_radius?: number;
 }
 
 interface DropdownUser {
@@ -39,6 +44,15 @@ export const PatientManagement = () => {
   const [open, setOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [geofenceDialogOpen, setGeofenceDialogOpen] = useState(false);
+  const [geofencePatient, setGeofencePatient] = useState<Patient | null>(null);
+  const [geofenceLoading, setGeofenceLoading] = useState(false);
+  const [geofenceForm, setGeofenceForm] = useState({
+    is_geofencing: false,
+    latitude: 0,
+    longitude: 0,
+    radius: 10,
+  });
   const [userPatients, setUserPatients] = useState<DropdownUser[]>([]);
   const [patientSearch, setPatientSearch] = useState('');
   const [showPatientDropdown, setShowPatientDropdown] = useState(false);
@@ -60,7 +74,7 @@ export const PatientManagement = () => {
   const loadPatients = async () => {
     if (!user) return;
     try {
-      const data = await api.get('/users');
+      const data = await api.get('/users') as any[];
       if (data && data.length > 0) {
         setPatients(data.map((p: any) => ({
           id: p._id || p.id,
@@ -69,6 +83,9 @@ export const PatientManagement = () => {
           address: p.address || '',
           email: p.email || '',
           role: p.role,
+          is_geofencing: p.is_geofencing || false,
+          location_boundary: p.location_boundary || { latitude: 0, longitude: 0 },
+          boundary_radius: p.boundary_radius || 10,
         })));
         return;
       }
@@ -80,7 +97,7 @@ export const PatientManagement = () => {
 
   const loadUserFamilies = useCallback(async (search: string = '') => {
     try {
-      const data = await api.get(`/users/family-list${search ? `?search=${search}` : ''}`);
+      const data = await api.get(`/users/family-list${search ? `?search=${search}` : ''}`) as DropdownUser[];
       setUserPatients(data || []);
     } catch (error) {
       console.error('Error loading families:', error);
@@ -172,6 +189,39 @@ export const PatientManagement = () => {
     setPatientSearch('');
     setShowPatientDropdown(false);
     setOpen(true);
+  };
+
+  const handleSaveGeofence = async () => {
+    if (!geofencePatient) return;
+
+    setGeofenceLoading(true);
+    try {
+      await api.post('/geofence/setup', {
+        patient_id: geofencePatient.id,
+        is_geofencing: geofenceForm.is_geofencing,
+        location_boundary: {
+          latitude: geofenceForm.latitude,
+          longitude: geofenceForm.longitude,
+        },
+        boundary_radius: geofenceForm.radius,
+      });
+
+      toast({
+        title: 'Success',
+        description: 'Geofence settings saved successfully',
+      });
+
+      setGeofenceDialogOpen(false);
+      loadPatients();
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to save geofence settings',
+        variant: 'destructive',
+      });
+    } finally {
+      setGeofenceLoading(false);
+    }
   };
 
   const isSample = patients === samplePatients;
@@ -378,6 +428,24 @@ export const PatientManagement = () => {
                     <Phone className="w-3.5 h-3.5" />
                     Call
                   </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5 h-8"
+                    onClick={() => {
+                      setGeofencePatient(patient);
+                      setGeofenceForm({
+                        is_geofencing: patient.is_geofencing || false,
+                        latitude: patient.location_boundary?.latitude || 0,
+                        longitude: patient.location_boundary?.longitude || 0,
+                        radius: patient.boundary_radius || 10,
+                      });
+                      setGeofenceDialogOpen(true);
+                    }}
+                  >
+                    <Settings className="w-3.5 h-3.5" />
+                    <span className="text-xs">Settings</span>
+                  </Button>
                 </div>
               </div>
             ))}
@@ -395,6 +463,18 @@ export const PatientManagement = () => {
           )}
         </DialogContent>
       </Dialog>
+
+      <GeofenceSettingsDialog
+        open={geofenceDialogOpen}
+        onOpenChange={setGeofenceDialogOpen}
+        geofencePatient={geofencePatient}
+        geofenceForm={geofenceForm}
+        setGeofenceForm={setGeofenceForm}
+        geofenceLoading={geofenceLoading}
+        setGeofenceLoading={setGeofenceLoading}
+        onSave={handleSaveGeofence}
+        onClose={() => setGeofenceDialogOpen(false)}
+      />
     </>
   );
 };

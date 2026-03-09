@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Column, String, DateTime, Enum, ForeignKey, ARRAY
+from sqlalchemy import Column, String, DateTime, Enum, ForeignKey, ARRAY, Boolean, Float, JSON, Integer
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -36,6 +36,14 @@ class User(Base):
     # Many-to-many family_ids stored as an array of UUIDs
     family_ids = Column(ARRAY(UUID(as_uuid=True)), nullable=True, default=[])
 
+    # ── Geofencing fields ────────────────────────────────────────────────────
+    is_geofencing = Column(Boolean, nullable=False, default=False)
+    location_boundary = Column(JSON, nullable=True)  # {latitude: float, longitude: float}
+    boundary_radius = Column(Float, nullable=True)  # in meters
+    geofence_state = Column(String, nullable=False, default="inside")  # inside | outside_candidate | outside_confirmed
+    geofence_outside_count = Column(Integer, nullable=False, default=0)  # samples outside
+    geofence_last_alert = Column(DateTime, nullable=True)  # last time exit alert was sent
+
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -56,6 +64,11 @@ class User(Base):
             "caregiver_id": str(self.caregiver_id) if self.caregiver_id else None,
             "corporate_id": str(self.corporate_id) if self.corporate_id else None,
             "family_ids": [str(fid) for fid in self.family_ids] if self.family_ids else [],
+            # Geofencing
+            "is_geofencing": self.is_geofencing,
+            "location_boundary": self.location_boundary,
+            "boundary_radius": self.boundary_radius,
+            "geofence_state": self.geofence_state,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
