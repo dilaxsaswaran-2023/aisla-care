@@ -1,0 +1,383 @@
+import uuid
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
+from sqlalchemy import or_
+from passlib.context import CryptContext
+
+from app.database import get_db
+from app.models.user import User
+from app.models.relationship import Relationship
+from app.auth import get_current_user, RoleChecker
+
+router = APIRouter(prefix="/api/users", tags=["users"])
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+CREATABLE_ROLES = {
+    "super_admin": ["admin", "caregiver", "patient", "family"],
+    "admin": ["caregiver", "patient", "family"],
+    "caregiver": ["patient", "family"],
+}
+
+
+# ─── GET /api/users ──────────────────────────────────────────────────────────
+@router.get("/")
+def list_users(
+    current_user: dict = Depends(RoleChecker(["super_admin", "admin", "caregiver"])),
+    db: Session = Depends(get_db),
+):
+    role = current_user["role"]
+    user_id = current_user["userId"]
+    query = db.query(User)
+
+    if role == "super_admin":
+        pass  # see all
+    elif role == "admin":
+        query = query.filter(User.corporate_id == uuid.UUID(user_id))
+    elif role == "caregiver":
+        query = query.filter(User.caregiver_id == uuid.UUID(user_id))
+
+    users = query.order_by(User.created_at.desc()).all()
+    return [u.to_dict() for u in users]
+
+
+# ─── GET /api/users/caregivers-list ──────────────────────────────────────────
+@router.get("/caregivers-list")
+def caregivers_list(
+    search: str = Query(""),
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    query = db.query(User).filter(User.role == "caregiver")
+    if current_user["role"] != "super_admin":
+        query = query.filter(User.corporate_id == uuid.UUID(current_user["userId"]))
+    if search:
+        query = query.filter(or_(
+            User.full_name.ilike(f"%{search}%"),
+            User.email.ilike(f"%{search}%"),
+        ))
+    caregivers = query.order_by(User.full_name).all()
+    return [{"_id": str(c.id), "email": c.email, "full_name": c.full_name} for c in caregivers]
+
+
+# ─── GET /api/users/patients-list ────────────────────────────────────────────
+@router.get("/patients-list")
+def patients_list(
+    search: str = Query(""),
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    query = db.query(User).filter(User.role == "patient")
+    if current_user["role"] != "super_admin":
+        query = query.filter(User.corporate_id == uuid.UUID(current_user["userId"]))
+    if search:
+        query = query.filter(or_(
+            User.full_name.ilike(f"%{search}%"),
+            User.email.ilike(f"%{search}%"),
+        ))
+    patients = query.order_by(User.full_name).all()
+    return [{"_id": str(p.id), "email": p.email, "full_name": p.full_name} for p in patients]
+
+
+# ─── GET /api/users/family-list ──────────────────────────────────────────────
+@router.get("/family-list")
+def family_list(
+    search: str = Query(""),
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    query = db.query(User).filter(User.role == "family")
+    if current_user["role"] != "super_admin":
+        query = query.filter(User.corporate_id == uuid.UUID(current_user["userId"]))
+    if search:
+        query = query.filter(or_(
+            User.full_name.ilike(f"%{search}%"),
+            User.email.ilike(f"%{search}%"),
+        ))
+    families = query.order_by(User.full_name).all()
+    return [{"_id": str(f.id), "email": f.email, "full_name": f.full_name} for f in families]
+
+
+# ─── GET /api/users/patients ─────────────────────────────────────────────────
+@router.get("/patients")
+def get_patients(
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    user_id = uuid.UUID(current_user["userId"])
+    rels = db.query(Relationship).filter(Relationship.related_user_id == user_id).all()
+    patient_ids = [r.patient_id for r in rels]
+
+    patients = db.query(User).filter(User.id.in_(patient_ids)).all()
+
+    family_rels = db.query(Relationship).filter(
+        Relationship.patient_id.in_(patient_ids),
+        Relationship.relationship_type == "family",
+    ).all()
+    family_ids = [r.related_user_id for r in family_rels]
+    family_members = db.query(User).filter(User.id.in_(family_ids)).all()
+
+    return {
+        "patients": [p.to_dict() for p in patients],
+        "familyMembers": [f.to_dict() for f in family_members],
+    }
+
+
+# ─── GET /api/users/corporate/:corporate_id ─────────────────────────────────
+@router.get("/corporate/{corporate_id}")
+def get_corporate_users(
+    corporate_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if current_user["role"] != "super_admin":
+        if current_user["role"] != "admin" or current_user["userId"] != corporate_id:
+            raise HTTPException(403, "You can only view users under your own organization")
+
+    corp_uuid = uuid.UUID(corporate_id)
+    users = (
+        db.query(User)
+        .filter(User.corporate_id == corp_uuid, User.id != corp_uuid)
+        .order_by(User.created_at.desc())
+        .all()
+    )
+    return [u.to_dict() for u in users]
+
+
+# ─── GET /api/users/stats/:userId ────────────────────────────────────────────
+@router.get("/stats/{user_id}")
+def get_user_stats(
+    user_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    target = db.query(User).filter(User.id == uuid.UUID(user_id)).first()
+    if not target:
+        raise HTTPException(404, "User not found")
+
+    base_stats = {
+        "total": 0, "admins": 0, "caregivers": 0, "patients": 0, "family": 0,
+        "role": target.role, "userId": user_id,
+        "corporate_id": str(target.corporate_id) if target.corporate_id else None,
+    }
+
+    query = db.query(User).filter(User.id != uuid.UUID(user_id))
+
+    if target.role == "super_admin":
+        query = query.filter(User.role != "super_admin")
+    elif target.role == "admin":
+        query = query.filter(User.corporate_id == uuid.UUID(user_id))
+    elif target.role == "caregiver":
+        query = query.filter(User.caregiver_id == uuid.UUID(user_id))
+    else:
+        return base_stats
+
+    users = query.all()
+    base_stats["total"] = len(users)
+    for u in users:
+        if u.role == "admin":
+            base_stats["admins"] += 1
+        elif u.role == "caregiver":
+            base_stats["caregivers"] += 1
+        elif u.role == "patient":
+            base_stats["patients"] += 1
+        elif u.role == "family":
+            base_stats["family"] += 1
+
+    return base_stats
+
+
+# ─── POST /api/users ─────────────────────────────────────────────────────────
+@router.post("/", status_code=201)
+def create_user(
+    body: dict,
+    current_user: dict = Depends(RoleChecker(["super_admin", "admin", "caregiver"])),
+    db: Session = Depends(get_db),
+):
+    actor_role = current_user["role"]
+    actor_id = current_user["userId"]
+    role = body.get("role")
+
+    allowed = CREATABLE_ROLES.get(actor_role, [])
+    if role not in allowed:
+        raise HTTPException(403, f'You are not allowed to create a user with role "{role}"')
+
+    email = body.get("email", "").lower()
+    existing = db.query(User).filter(User.email == email).first()
+    if existing:
+        raise HTTPException(400, "Email already in use")
+
+    hashed = pwd_context.hash(body.get("password", ""))
+    user = User(
+        email=email,
+        password=hashed,
+        full_name=body.get("full_name", ""),
+        role=role,
+        status="invited",
+        phone_country=body.get("phone_country"),
+        phone_number=body.get("phone_number"),
+        caregiver_type=body.get("caregiver_type"),
+        caregiver_subtype=body.get("caregiver_subtype"),
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    # Compute corporate_id
+    if role != "super_admin":
+        if actor_role == "super_admin":
+            user.corporate_id = user.id
+        elif actor_role == "admin":
+            user.corporate_id = uuid.UUID(actor_id)
+        elif actor_role == "caregiver":
+            caregiver = db.query(User).filter(User.id == uuid.UUID(actor_id)).first()
+            user.corporate_id = caregiver.corporate_id if caregiver and caregiver.corporate_id else uuid.UUID(actor_id)
+
+    # Patient-specific fields
+    if role == "patient":
+        caregiver_id = body.get("caregiver_id")
+        if caregiver_id:
+            user.caregiver_id = uuid.UUID(caregiver_id)
+        elif actor_role == "caregiver":
+            user.caregiver_id = uuid.UUID(actor_id)
+        family_ids = body.get("family_ids")
+        if isinstance(family_ids, list) and family_ids:
+            user.family_ids = [uuid.UUID(fid) for fid in family_ids]
+
+    db.commit()
+    db.refresh(user)
+
+    return {
+        "id": str(user.id),
+        "email": user.email,
+        "full_name": user.full_name,
+        "role": user.role,
+        "caregiver_id": str(user.caregiver_id) if user.caregiver_id else None,
+        "family_ids": [str(fid) for fid in user.family_ids] if user.family_ids else [],
+        "corporate_id": str(user.corporate_id) if user.corporate_id else None,
+        "status": user.status,
+        "phone_country": user.phone_country,
+        "phone_number": user.phone_number,
+        "caregiver_type": user.caregiver_type,
+        "caregiver_subtype": user.caregiver_subtype,
+    }
+
+
+# ─── PUT /api/users/:id/status ───────────────────────────────────────────────
+@router.put("/{user_id}/status")
+def update_user_status(
+    user_id: str,
+    body: dict,
+    current_user: dict = Depends(RoleChecker(["super_admin", "admin"])),
+    db: Session = Depends(get_db),
+):
+    status = body.get("status")
+    if status not in ["invited", "active", "disabled"]:
+        raise HTTPException(400, "Invalid status")
+
+    target = db.query(User).filter(User.id == uuid.UUID(user_id)).first()
+    if not target:
+        raise HTTPException(404, "User not found")
+
+    if current_user["role"] == "admin":
+        target_corp = str(target.corporate_id) if target.corporate_id else None
+        if target_corp != current_user["userId"]:
+            raise HTTPException(403, "You can only change users under your organization")
+
+    target.status = status
+    db.commit()
+    return {"success": True, "id": str(target.id), "status": target.status}
+
+
+# ─── PUT /api/users/:id ──────────────────────────────────────────────────────
+@router.put("/{user_id}")
+def update_user(
+    user_id: str,
+    body: dict,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    target = db.query(User).filter(User.id == uuid.UUID(user_id)).first()
+    if not target:
+        raise HTTPException(404, "User not found")
+
+    # Authorization
+    if current_user["userId"] != user_id and current_user["role"] != "super_admin":
+        if current_user["role"] == "admin":
+            admin_corp = current_user.get("corporate_id")
+            if not admin_corp:
+                admin = db.query(User).filter(User.id == uuid.UUID(current_user["userId"])).first()
+                admin_corp = str(admin.corporate_id) if admin and admin.corporate_id else None
+            target_corp = str(target.corporate_id) if target.corporate_id else None
+            if target_corp != admin_corp:
+                raise HTTPException(403, "You can only update users under your organization")
+        else:
+            raise HTTPException(403, "You can only update your own details")
+
+    if body.get("full_name"):
+        target.full_name = body["full_name"]
+    if "phone_country" in body:
+        target.phone_country = body["phone_country"]
+    if "phone_number" in body:
+        target.phone_number = body["phone_number"]
+    if "address" in body:
+        target.address = body["address"]
+    if "caregiver_type" in body:
+        target.caregiver_type = body["caregiver_type"]
+    if "caregiver_subtype" in body:
+        target.caregiver_subtype = body["caregiver_subtype"]
+
+    email = body.get("email")
+    if email:
+        existing = db.query(User).filter(User.email == email.lower(), User.id != uuid.UUID(user_id)).first()
+        if existing:
+            raise HTTPException(400, "Email already in use")
+        target.email = email.lower()
+
+    if target.role == "patient":
+        if "caregiver_id" in body:
+            target.caregiver_id = uuid.UUID(body["caregiver_id"]) if body["caregiver_id"] else None
+        if "family_ids" in body:
+            fids = body["family_ids"]
+            target.family_ids = [uuid.UUID(fid) for fid in fids] if isinstance(fids, list) else []
+
+    db.commit()
+    db.refresh(target)
+
+    return {
+        "id": str(target.id),
+        "email": target.email,
+        "full_name": target.full_name,
+        "role": target.role,
+        "caregiver_id": str(target.caregiver_id) if target.caregiver_id else None,
+        "family_ids": [str(fid) for fid in target.family_ids] if target.family_ids else [],
+        "corporate_id": str(target.corporate_id) if target.corporate_id else None,
+    }
+
+
+# ─── DELETE /api/users/:id ───────────────────────────────────────────────────
+@router.delete("/{user_id}")
+def delete_user(
+    user_id: str,
+    current_user: dict = Depends(RoleChecker(["super_admin", "admin"])),
+    db: Session = Depends(get_db),
+):
+    target = db.query(User).filter(User.id == uuid.UUID(user_id)).first()
+    if not target:
+        raise HTTPException(404, "User not found")
+
+    if current_user["role"] == "admin" and target.role in ["super_admin", "admin"]:
+        raise HTTPException(403, "Insufficient permissions to delete this user")
+
+    if current_user["role"] == "admin":
+        target_corp = str(target.corporate_id) if target.corporate_id else None
+        if target_corp != current_user["userId"]:
+            raise HTTPException(403, "You can only delete users under your organization")
+
+    if str(target.id) == current_user["userId"]:
+        raise HTTPException(400, "Cannot delete your own account")
+
+    db.delete(target)
+    db.commit()
+    return {"success": True}
