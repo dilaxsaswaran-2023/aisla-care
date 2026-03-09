@@ -29,6 +29,16 @@ const Auth = () => {
         toast({ title: "Login failed", description: error.message, variant: "destructive" });
       } else {
         toast({ title: "Welcome back!", description: "You've been successfully logged in." });
+        // Check if user is invited and needs to complete their profile
+        const raw = localStorage.getItem('aisla_user');
+        try {
+          const u = raw ? JSON.parse(raw) : null;
+          if (u && (u as any).status === 'invited') {
+            navigate('/complete-invite');
+            return;
+          }
+        } catch {}
+
         switch (role) {
           case 'super_admin': navigate('/super-admin'); break;
           case 'admin': navigate('/admin'); break;

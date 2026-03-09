@@ -70,8 +70,48 @@ router.post('/login', async (req: Request, res: Response) => {
     res.json({
       accessToken,
       refreshToken,
-      user: { id: user.id, email: user.email, full_name: user.full_name, role: user.role, corporate_id: user.corporate_id },
+      user: { id: user.id, email: user.email, full_name: user.full_name, role: user.role, corporate_id: user.corporate_id, status: (user as any).status, phone_country: (user as any).phone_country, phone_number: (user as any).phone_number },
     });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/auth/complete-invite – invited user completes profile and sets new password
+router.post('/complete-invite', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = req.user!.userId;
+    const { new_password, full_name, phone_country, phone_number, address } = req.body;
+
+    const user = await User.findById(userId);
+    if (!user) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    if ((user as any).status !== 'invited') {
+      res.status(400).json({ error: 'User is not in invited state' });
+      return;
+    }
+
+    const updateData: any = {};
+    if (new_password) {
+      const hashed = await bcrypt.hash(new_password, 12);
+      updateData.password = hashed;
+    }
+    if (full_name) updateData.full_name = full_name;
+    if (phone_country !== undefined) updateData.phone_country = phone_country;
+    if (phone_number !== undefined) updateData.phone_number = phone_number;
+    if (address !== undefined) updateData.address = address;
+
+    updateData.status = 'active';
+
+    const updated = await User.findByIdAndUpdate(userId, updateData, { new: true }).select('-password');
+
+    // Issue fresh token pair
+    const { accessToken, refreshToken } = await generateTokenPair(updated!.id, updated!.role, updated!.corporate_id?.toString());
+
+    res.json({ accessToken, refreshToken, user: { id: updated!.id, email: updated!.email, full_name: updated!.full_name, role: updated!.role, corporate_id: updated!.corporate_id, status: (updated as any).status, phone_country: (updated as any).phone_country, phone_number: (updated as any).phone_number } });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -137,7 +177,7 @@ router.get('/me', authMiddleware, async (req: Request, res: Response) => {
       res.status(404).json({ error: 'User not found' });
       return;
     }
-    res.json({ id: user.id, email: user.email, full_name: user.full_name, role: user.role, corporate_id: user.corporate_id });
+    res.json({ id: user.id, email: user.email, full_name: user.full_name, role: user.role, corporate_id: user.corporate_id, status: (user as any).status, phone_country: (user as any).phone_country, phone_number: (user as any).phone_number });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

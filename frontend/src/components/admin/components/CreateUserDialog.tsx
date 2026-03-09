@@ -15,6 +15,10 @@ interface CreateUserDialogProps {
     role: string;
     caregiverId: string;
     familyIds: string[];
+    phone_country?: string;
+    phone_number?: string;
+    caregiver_type?: string;
+    caregiver_subtype?: string;
   };
   setFormData: (data: any) => void;
   caregivers: any[];
@@ -49,6 +53,14 @@ export const CreateUserDialog = ({
   handleRoleChange,
   onCreateUser,
 }: CreateUserDialogProps) => {
+  const caregiverSubtypes: Record<string, string[]> = {
+    'Home Care Assistants': ['Domiciliary Carer', 'Reablement Assistant'],
+    'Medical/Clinical': ['District Nurse', 'Admiral Nurse', 'Stroke Nurse'],
+    'Therapy/Physical': ['Occupational Therapist (OT)', 'Physiotherapist', 'Cognitive Stimulation Therapist'],
+    'Communication': ['Social Worker', 'MH Social Worker', 'SLT'],
+    'Day-to-Day/Social': ['Befriender', 'Companion', 'Respite', 'Support Worker'],
+    'Nutrition': ['Meals on Wheels', 'Cook', 'Dietician'],
+  };
   const toggleFamilyId = (id: string) => {
     const ids = formData.familyIds.includes(id)
       ? formData.familyIds.filter((i) => i !== id)
@@ -105,6 +117,60 @@ export const CreateUserDialog = ({
               placeholder="Enter password"
             />
           </div>
+
+          <div>
+            <Label>Contact</Label>
+            <div className="flex gap-2">
+              <Input
+                placeholder="Country code (e.g. 44)"
+                value={(formData as any).phone_country || ''}
+                onChange={(e) => setFormData({ ...formData, phone_country: e.target.value })}
+                className="w-28"
+              />
+              <Input
+                placeholder="Phone number"
+                value={(formData as any).phone_number || ''}
+                onChange={(e) => setFormData({ ...formData, phone_number: e.target.value })}
+              />
+            </div>
+          </div>
+
+          {/* Caregiver Type/Subtype */}
+          {formData.role === 'caregiver' && (
+            <div>
+              <Label>Caregiver Type</Label>
+              <Select value={(formData as any).caregiver_type || ''} onValueChange={(v) => setFormData({ ...formData, caregiver_type: v, caregiver_subtype: '' })}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Home Care Assistants">Home Care Assistants</SelectItem>
+                  <SelectItem value="Medical/Clinical">Medical/Clinical</SelectItem>
+                  <SelectItem value="Therapy/Physical">Therapy/Physical</SelectItem>
+                  <SelectItem value="Communication">Communication</SelectItem>
+                  <SelectItem value="Day-to-Day/Social">Day-to-Day/Social</SelectItem>
+                  <SelectItem value="Nutrition">Nutrition</SelectItem>
+                </SelectContent>
+              </Select>
+              {/* Subtype select depends on type */}
+              <div className="mt-2">
+                <Label>Caregiver Subtype</Label>
+                <Select
+                  value={(formData as any).caregiver_subtype || ''}
+                  onValueChange={(v) => setFormData({ ...formData, caregiver_subtype: v })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(caregiverSubtypes[(formData as any).caregiver_type] || []).map((s) => (
+                      <SelectItem key={s} value={s}>{s}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
 
           {/* Caregiver Selection - For Patient Role */}
           {formData.role === 'patient' && (

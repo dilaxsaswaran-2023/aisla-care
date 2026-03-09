@@ -7,7 +7,9 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { RoleBasedRedirect } from "./components/routing/RoleBasedRoute";
 import { ProtectedRoute } from "./components/routing/ProtectedRoute";
 import { PublicRoute } from "./components/routing/PublicRoute";
+import { AuthOnlyRoute } from "./components/routing/AuthOnlyRoute";
 import Auth from "./pages/Auth";
+import CompleteInvite from "./pages/CompleteInvite";
 import Caregiver from "./pages/Caregiver";
 import Family from "./pages/Family";
 import Patient from "./pages/Patient";
@@ -32,6 +34,10 @@ const App = () => (
             <Route 
               path="/auth" 
               element={<PublicRoute element={<Auth />} />} 
+            />
+            <Route
+              path="/complete-invite"
+              element={<AuthOnlyRoute element={<CompleteInvite />} />}
             />
             
             {/* Role-based routes (protected by role) */}

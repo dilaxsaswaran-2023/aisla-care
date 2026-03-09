@@ -6,8 +6,12 @@ export interface IUser extends Document {
   full_name: string;
   role: 'super_admin' | 'admin' | 'caregiver' | 'patient' | 'family';
   avatar_url?: string;
-  phone?: string;
+  phone_country?: string;
+  phone_number?: string;
   address?: string;
+  status?: 'invited' | 'active' | 'disabled';
+  caregiver_type?: string;
+  caregiver_subtype?: string;
   caregiver_id?: string; // For patients - reference to their caregiver
   family_ids?: string[]; // For patients - references to family members (many-to-many)
   corporate_id?: string; // Reference to the admin/super_admin who manages this user
@@ -22,7 +26,11 @@ const UserSchema = new Schema<IUser>(
     full_name: { type: String, required: true },
     role: { type: String, enum: ['super_admin', 'admin', 'caregiver', 'patient', 'family'], required: true },
     avatar_url: { type: String },
-    phone: { type: String },
+    phone_country: { type: String },
+    phone_number: { type: String },
+    status: { type: String, enum: ['invited', 'active', 'disabled'], default: 'active' },
+    caregiver_type: { type: String },
+    caregiver_subtype: { type: String },
     address: { type: String },
     caregiver_id: { type: Schema.Types.ObjectId, ref: 'User' }, // Reference to caregiver for patients
     family_ids: [{ type: Schema.Types.ObjectId, ref: 'User' }], // References to family members for patients (many-to-many)

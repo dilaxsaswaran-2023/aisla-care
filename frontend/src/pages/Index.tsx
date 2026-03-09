@@ -14,7 +14,7 @@ const Index = () => {
       switch (userRole) {
         case 'super_admin': navigate('/super-admin'); break;
         case 'admin': navigate('/admin'); break;
-        case 'caregiver': navigate('/dashboard'); break;
+        case 'caregiver': navigate('/caregiver'); break;
         case 'patient': navigate('/patient'); break;
         case 'family': navigate('/family'); break;
       }
@@ -47,7 +47,7 @@ const Index = () => {
       title: "Caregiver",
       description: "Monitor patients, manage alerts, coordinate care plans",
       icon: Users,
-      route: "/dashboard",
+      route: "/caregiver",
       color: "bg-primary/10 text-primary",
       primary: true,
     },

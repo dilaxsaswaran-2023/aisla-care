@@ -129,7 +129,7 @@ router.post('/', authMiddleware, roleMiddleware('super_admin', 'admin', 'caregiv
   try {
     const actorRole = req.user!.role;
     const actorId = req.user!.userId;
-    const { email, password, full_name, role, caregiver_id, family_ids } = req.body;
+    const { email, password, full_name, role, caregiver_id, family_ids, phone_country, phone_number, caregiver_type, caregiver_subtype } = req.body;
 
     const allowed = CREATABLE_ROLES[actorRole] || [];
     if (!allowed.includes(role)) {
@@ -144,7 +144,8 @@ router.post('/', authMiddleware, roleMiddleware('super_admin', 'admin', 'caregiv
     }
 
     const hashed = await bcrypt.hash(password, 12);
-    const userData: any = { email, password: hashed, full_name, role };
+    // New users created by admin/caregiver default to 'invited' status
+    const userData: any = { email, password: hashed, full_name, role, status: 'invited', phone_country, phone_number, caregiver_type, caregiver_subtype };
 
     // Create user first so we have their ID for corporate_id assignment
     let user = await User.create(userData);
@@ -180,7 +181,41 @@ router.post('/', authMiddleware, roleMiddleware('super_admin', 'admin', 'caregiv
 
     // Update user with all computed fields
     user = await User.findByIdAndUpdate(user.id, updateData, { new: true }) as any;
-    res.status(201).json({ id: user.id, email: user.email, full_name: user.full_name, role: user.role, caregiver_id: user.caregiver_id, family_ids: user.family_ids, corporate_id: user.corporate_id });
+    res.status(201).json({ id: user.id, email: user.email, full_name: user.full_name, role: user.role, caregiver_id: user.caregiver_id, family_ids: user.family_ids, corporate_id: user.corporate_id, status: user.status, phone_country: user.phone_country, phone_number: user.phone_number, caregiver_type: user.caregiver_type, caregiver_subtype: user.caregiver_subtype });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/users/:id/status – admin/super_admin change user status
+router.put('/:id/status', authMiddleware, roleMiddleware('super_admin', 'admin'), async (req: Request, res: Response) => {
+  try {
+    const targetUserId = req.params.id;
+    const { status } = req.body;
+
+    if (!['invited', 'active', 'disabled'].includes(status)) {
+      res.status(400).json({ error: 'Invalid status' });
+      return;
+    }
+
+    const targetUser = await User.findById(targetUserId);
+    if (!targetUser) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    // Admin can only change users under their corporate_id
+    if (req.user!.role === 'admin') {
+      const targetCorporateId = (targetUser as any).corporate_id?.toString?.();
+      if (targetCorporateId !== req.user!.userId) {
+        res.status(403).json({ error: 'You can only change users under your organization' });
+        return;
+      }
+    }
+
+    targetUser.set({ status });
+    await targetUser.save();
+    res.json({ success: true, id: targetUser.id, status: targetUser.status });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -322,7 +357,7 @@ router.put('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
     const targetUserId = req.params.id;
     const currentUser = req.user!;
-    const { full_name, email, caregiver_id, family_ids } = req.body;
+    const { full_name, email, caregiver_id, family_ids, phone_country, phone_number, address, caregiver_type, caregiver_subtype } = req.body;
 
     // Fetch the target user
     const targetUser = await User.findById(targetUserId);
@@ -356,6 +391,12 @@ router.put('/:id', authMiddleware, async (req: Request, res: Response) => {
     const updateData: any = {};
     
     if (full_name) updateData.full_name = full_name;
+    if (phone_country !== undefined) updateData.phone_country = phone_country;
+    if (phone_number !== undefined) updateData.phone_number = phone_number;
+    if (address !== undefined) updateData.address = address;
+    if (caregiver_type !== undefined) updateData.caregiver_type = caregiver_type;
+    if (caregiver_subtype !== undefined) updateData.caregiver_subtype = caregiver_subtype;
+
     if (email) {
       // Check if email is already in use by another user
       const existing = await User.findOne({ email, _id: { $ne: targetUserId } });

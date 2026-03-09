@@ -2,6 +2,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ChevronDown, Check, X } from 'lucide-react';
 
 interface EditUserDialogProps {
@@ -20,6 +21,10 @@ interface EditUserDialogProps {
     email: string;
     caregiverId: string;
     familyIds: string[];
+    phone_country?: string;
+    phone_number?: string;
+    caregiver_type?: string;
+    caregiver_subtype?: string;
   };
   setEditFormData: (data: any) => void;
   editCaregivers: any[];
@@ -85,6 +90,66 @@ export const EditUserDialog = ({
                 placeholder="Enter email"
               />
             </div>
+
+            <div>
+              <Label>Contact</Label>
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Country code (e.g. 44)"
+                  value={(editFormData as any).phone_country || ''}
+                  onChange={(e) => setEditFormData({ ...editFormData, phone_country: e.target.value })}
+                  className="w-28"
+                />
+                <Input
+                  placeholder="Phone number"
+                  value={(editFormData as any).phone_number || ''}
+                  onChange={(e) => setEditFormData({ ...editFormData, phone_number: e.target.value })}
+                />
+              </div>
+            </div>
+
+            {editingUser.role === 'caregiver' && (
+              <div>
+                <Label>Caregiver Type</Label>
+                <Select value={(editFormData as any).caregiver_type || ''} onValueChange={(v) => {
+                  // clear subtype if type changes
+                  setEditFormData({ ...editFormData, caregiver_type: v, caregiver_subtype: '' });
+                }}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Home Care Assistants">Home Care Assistants</SelectItem>
+                    <SelectItem value="Medical/Clinical">Medical/Clinical</SelectItem>
+                    <SelectItem value="Therapy/Physical">Therapy/Physical</SelectItem>
+                    <SelectItem value="Communication">Communication</SelectItem>
+                    <SelectItem value="Day-to-Day/Social">Day-to-Day/Social</SelectItem>
+                    <SelectItem value="Nutrition">Nutrition</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <Label className="mt-2">Caregiver Subtype</Label>
+                <Select value={(editFormData as any).caregiver_subtype || ''} onValueChange={(v) => setEditFormData({ ...editFormData, caregiver_subtype: v })}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(() => {
+                      const map: Record<string, string[]> = {
+                        'Home Care Assistants': ['Domiciliary Carer', 'Reablement Assistant'],
+                        'Medical/Clinical': ['District Nurse', 'Admiral Nurse', 'Stroke Nurse'],
+                        'Therapy/Physical': ['Occupational Therapist (OT)', 'Physiotherapist', 'Cognitive Stimulation Therapist'],
+                        'Communication': ['Social Worker', 'MH Social Worker', 'SLT'],
+                        'Day-to-Day/Social': ['Befriender', 'Companion', 'Respite', 'Support Worker'],
+                        'Nutrition': ['Meals on Wheels', 'Cook', 'Dietician'],
+                      } as Record<string, string[]>;
+                      const opts = map[(editFormData as any).caregiver_type] || [];
+                      return opts.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>);
+                    })()}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             {/* Caregiver Selection - For Patient Role */}
             {editingUser.role === 'patient' && (

@@ -14,6 +14,12 @@ export interface User {
   full_name: string;
   role: string;
   corporate_id?: string;
+  phone_country?: string;
+  phone_number?: string;
+  status?: 'invited' | 'active' | 'disabled';
+  caregiver_type?: string;
+  caregiver_subtype?: string;
+  address?: string;
 }
 
 interface AuthContextType {

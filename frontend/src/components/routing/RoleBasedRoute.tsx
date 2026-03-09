@@ -22,7 +22,7 @@ export const RoleBasedRedirect = () => {
         navigate('/admin');
         break;
       case 'caregiver':
-        navigate('/dashboard');
+        navigate('/caregiver');
         break;
       case 'patient':
         navigate('/patient');

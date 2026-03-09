@@ -20,9 +20,13 @@ interface User {
   full_name: string;
   email: string;
   role: string;
-  status?: 'active' | 'disabled';
+  status?: 'active' | 'disabled' | 'invited';
   caregiver_id?: string;
   family_ids?: string[];
+  phone_country?: string;
+  phone_number?: string;
+  caregiver_type?: string;
+  caregiver_subtype?: string;
 }
 
 interface DropdownUser {
@@ -45,6 +49,7 @@ const STATUS_OPTIONS = [
   { value: 'all', label: 'All Status' },
   { value: 'active', label: 'Active' },
   { value: 'disabled', label: 'Disabled' },
+  { value: 'invited', label: 'Invited' },
 ];
 
 const roleBadge = (role: string) => {
@@ -72,6 +77,10 @@ export const UserManagement = () => {
     email: '',
     caregiverId: '',
     familyIds: [] as string[],
+    phone_country: '',
+    phone_number: '',
+    caregiver_type: '',
+    caregiver_subtype: '',
   });
   const [editCaregivers, setEditCaregivers] = useState<DropdownUser[]>([]);
   const [editFamilies, setEditFamilies] = useState<DropdownUser[]>([]);
@@ -94,6 +103,10 @@ export const UserManagement = () => {
     role: 'caregiver',
     caregiverId: '',
     familyIds: [] as string[],
+    phone_country: '',
+    phone_number: '',
+    caregiver_type: '',
+    caregiver_subtype: '',
   });
 
   useEffect(() => {
@@ -125,6 +138,10 @@ export const UserManagement = () => {
               caregiver_id: u.caregiver_id,
               family_ids: Array.isArray(u.family_ids) ? u.family_ids : [],
               patient_id: u.patient_id,
+              phone_country: u.phone_country,
+              phone_number: u.phone_number,
+              caregiver_type: u.caregiver_type,
+              caregiver_subtype: u.caregiver_subtype,
             }))
           : []
       );
@@ -162,6 +179,10 @@ export const UserManagement = () => {
       role: newRole,
       caregiverId: '',
       familyIds: [],
+      phone_country: '',
+      phone_number: '',
+      caregiver_type: '',
+      caregiver_subtype: '',
     });
 
     // Auto-load caregivers if patient role is selected
@@ -188,6 +209,10 @@ export const UserManagement = () => {
       email: user.email,
       caregiverId: user.caregiver_id || '',
       familyIds: user.family_ids || [],
+      phone_country: (user as any).phone_country || '',
+      phone_number: (user as any).phone_number || '',
+      caregiver_type: (user as any).caregiver_type || '',
+      caregiver_subtype: (user as any).caregiver_subtype || '',
     });
     setEditCaregiverSearch('');
     setEditFamilySearch('');
@@ -228,6 +253,10 @@ export const UserManagement = () => {
       const payload: any = {
         full_name: editFormData.fullName,
         email: editFormData.email,
+        phone_country: editFormData.phone_country,
+        phone_number: editFormData.phone_number,
+        caregiver_type: editFormData.caregiver_type,
+        caregiver_subtype: editFormData.caregiver_subtype,
       };
       
       // Add caregiver and family IDs if editing a patient
@@ -274,6 +303,10 @@ export const UserManagement = () => {
         password: formData.password,
         full_name: formData.fullName,
         role: formData.role,
+        phone_country: formData.phone_country,
+        phone_number: formData.phone_number,
+        caregiver_type: formData.caregiver_type,
+        caregiver_subtype: formData.caregiver_subtype,
       };
 
       if (formData.role === 'patient' && formData.caregiverId) {
@@ -294,6 +327,10 @@ export const UserManagement = () => {
         role: 'caregiver',
         caregiverId: '',
         familyIds: [],
+        phone_country: '',
+        phone_number: '',
+        caregiver_type: '',
+        caregiver_subtype: '',
       });
       loadUsers();
     } catch (error: any) {
@@ -309,6 +346,10 @@ export const UserManagement = () => {
       role: 'caregiver',
       caregiverId: '',
       familyIds: [],
+      phone_country: '',
+      phone_number: '',
+      caregiver_type: '',
+      caregiver_subtype: '',
     });
     setCaregiverSearch('');
     setFamilySearch('');
@@ -450,6 +491,7 @@ export const UserManagement = () => {
                   )}
                 </div>
               </TableHead>
+              <TableHead className={`${isMobile ? 'w-2/12 px-2' : ''}`}>Contact</TableHead>
               <TableHead className={`${isMobile ? 'w-3/12 px-2 text-right' : 'text-right'}`}>Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -492,24 +534,31 @@ export const UserManagement = () => {
                     roleBadge(u.role)
                   )}
                 </TableCell>
-                <TableCell className={`${isMobile ? 'px-2 w-2/12' : ''}`} onClick={(e) => e.stopPropagation()}>
-                  <button
-                    onClick={() => {
-                      setStatusToggleUser(u);
-                      setStatusToggleOpen(true);
-                    }}
-                    className="cursor-pointer"
-                    title="Click to toggle status"
-                  >
-                    <Badge
-                      variant={u.status === 'active' ? 'secondary' : 'destructive'}
-                      className={`gap-1 ${isMobile ? 'text-[10px] px-1.5 py-0.5' : 'text-[11px]'}`}
+                  <TableCell className={`${isMobile ? 'px-2 w-2/12' : ''}`} onClick={(e) => e.stopPropagation()}>
+                    <button
+                      onClick={() => {
+                        setStatusToggleUser(u);
+                        setStatusToggleOpen(true);
+                      }}
+                      className="cursor-pointer"
+                      title="Click to toggle status"
                     >
-                      <span className={`rounded-full ${u.status === 'active' ? 'bg-green-500' : 'bg-red-500'} ${isMobile ? 'w-1 h-1' : 'w-1.5 h-1.5'}`} />
-                      {isMobile ? u.status.charAt(0).toUpperCase() : u.status}
-                    </Badge>
-                  </button>
-                </TableCell>
+                      <Badge
+                        variant={u.status === 'active' ? 'secondary' : 'destructive'}
+                        className={`gap-1 ${isMobile ? 'text-[10px] px-1.5 py-0.5' : 'text-[11px]'}`}
+                      >
+                        <span className={`rounded-full ${u.status === 'active' ? 'bg-green-500' : 'bg-red-500'} ${isMobile ? 'w-1 h-1' : 'w-1.5 h-1.5'}`} />
+                        {isMobile ? u.status.charAt(0).toUpperCase() : u.status}
+                      </Badge>
+                    </button>
+                  </TableCell>
+                  <TableCell className={`${isMobile ? 'px-2 w-2/12' : ''}`}>
+                    {u.phone_country || u.phone_number ? (
+                      <span className="text-sm">{`${u.phone_country ? '+' + u.phone_country : ''} ${u.phone_number || ''}`.trim()}</span>
+                    ) : (
+                      <span className="text-sm text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
                 <TableCell className={isMobile ? 'px-0 w-3/12' : 'text-right'} onClick={(e) => e.stopPropagation()}>
                   <div className={`w-full flex ${isMobile ? 'justify-end gap-0.5 px-2 py-1.5' : 'justify-end gap-1'}`}>
                     <Button variant="ghost" size="sm" onClick={() => handleEditClick(u)} title="Edit user" className={isMobile ? 'p-1 h-auto' : ''}>
