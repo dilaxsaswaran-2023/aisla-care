@@ -1,88 +1,53 @@
-import sqlite3
+"""Database bootstrap for the Budii agent.
+
+This module adds the backend-py directory to sys.path so that the agent
+can import shared SQLAlchemy models and the database session from backend-py.
+No duplicate DB config – both services share the same PostgreSQL instance
+configured via backend-py/.env.
+"""
+import sys
+import logging
 from pathlib import Path
 
-DB_PATH = Path("data/budii.db")
+# ---------------------------------------------------------------------------
+# Path setup – must come before any backend-py imports
+# ---------------------------------------------------------------------------
+# __file__ is  agent/budii_langraph/app/database/db.py
+# parents[0]  agent/budii_langraph/app/database/
+# parents[1]  agent/budii_langraph/app/
+# parents[2]  agent/budii_langraph/
+# parents[3]  agent/
+# parents[4]  <workspace root>
+_BACKEND_DIR = Path(__file__).resolve().parents[4] / "backend-py"
+if str(_BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(_BACKEND_DIR))
+
+# ---------------------------------------------------------------------------
+# Shared imports from backend-py
+# ---------------------------------------------------------------------------
+from app.database import SessionLocal, engine, Base  # noqa: E402
+from app.models.medication_schedule import MedicationSchedule  # noqa: E402, F401
+from app.models.patient_active_hours import PatientActiveHours  # noqa: E402, F401
+from app.models.agent_event import AgentEvent  # noqa: E402, F401
+
+logger = logging.getLogger("budii.db")
 
 
-def get_connection():
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+def get_session():
+    """Return a new SQLAlchemy session backed by the shared PostgreSQL DB."""
+    return SessionLocal()
 
 
 def init_db():
-    conn = get_connection()
+    """Ensure agent-specific tables exist in the shared PostgreSQL database."""
+    logger.info("[DB] Creating agent tables if they do not exist")
+    Base.metadata.create_all(
+        bind=engine,
+        tables=[
+            MedicationSchedule.__table__,
+            PatientActiveHours.__table__,
+            AgentEvent.__table__,
+        ],
+    )
+    logger.info("[DB] Agent tables ready")
 
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS patient_geofence (
-            patient_id TEXT PRIMARY KEY,
-            home_lat REAL NOT NULL,
-            home_lng REAL NOT NULL,
-            radius_meters REAL NOT NULL
-        )
-    """)
-
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS medication_schedule (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            patient_id TEXT NOT NULL,
-            medicine_name TEXT NOT NULL,
-            scheduled_time TEXT NOT NULL,
-            is_active INTEGER NOT NULL DEFAULT 1
-        )
-    """)
-
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS patient_active_hours (
-            patient_id TEXT PRIMARY KEY,
-            active_start TEXT NOT NULL,
-            active_end TEXT NOT NULL
-        )
-    """)
-
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS processed_events (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            event_id TEXT,
-            patient_id TEXT,
-            timestamp TEXT,
-            result_json TEXT,
-            created_at TEXT
-        )
-    """)
-
-    # -----------------------------
-    # Seed sample data
-    # -----------------------------
-
-    # Geofence
-    conn.execute("""
-        INSERT OR IGNORE INTO patient_geofence
-        (patient_id, home_lat, home_lng, radius_meters)
-        VALUES
-        ('patient_001', 6.9271, 79.8612, 150),
-        ('patient_002', 6.9275, 79.8615, 150)
-    """)
-
-    # Medication schedule
-    conn.execute("""
-        INSERT OR IGNORE INTO medication_schedule
-        (patient_id, medicine_name, scheduled_time)
-        VALUES
-        ('patient_001', 'Blood Pressure Tablet', '08:00'),
-        ('patient_001', 'Vitamin D', '20:00'),
-        ('patient_002', 'Diabetes Tablet', '09:00')
-    """)
-
-    # Active hours
-    conn.execute("""
-        INSERT OR IGNORE INTO patient_active_hours
-        (patient_id, active_start, active_end)
-        VALUES
-        ('patient_001', '06:00', '22:00'),
-        ('patient_002', '07:00', '21:00')
-    """)
-
-    conn.commit()
-    conn.close()

@@ -1,4 +1,15 @@
+import sys
 import logging
+from pathlib import Path
+
+# ---------------------------------------------------------------------------
+# Bootstrap: add backend-py to sys.path so shared models/DB can be imported.
+# This must run before any local imports that pull from database.db.
+# ---------------------------------------------------------------------------
+_BACKEND_DIR = Path(__file__).resolve().parents[3] / "backend-py"
+if str(_BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(_BACKEND_DIR))
+
 from fastapi import FastAPI
 import uvicorn
 
@@ -46,4 +57,5 @@ if __name__ == "__main__":
         port=8000,
         reload=True
     )
+
     

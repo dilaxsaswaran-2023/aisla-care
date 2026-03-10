@@ -8,6 +8,11 @@ from alembic import context
 # Import the app's Base and models
 import sys
 import os
+from dotenv import load_dotenv
+
+# Load .env file
+load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
+
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from app.database import Base
 from app.models import *  # Import all models
@@ -43,7 +48,8 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    url = config.get_main_option("sqlalchemy.url")
+    # Get URL from .env or fall back to config
+    url = os.getenv('DATABASE_URL') or config.get_main_option("sqlalchemy.url")
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -62,8 +68,14 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
+    # Get URL from .env or fall back to config
+    url = os.getenv('DATABASE_URL') or config.get_main_option("sqlalchemy.url")
+    
+    configuration = config.get_section(config.config_ini_section, {})
+    configuration["sqlalchemy.url"] = url
+    
     connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
+        configuration,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
