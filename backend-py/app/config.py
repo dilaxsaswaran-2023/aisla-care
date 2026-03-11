@@ -12,6 +12,11 @@ class Settings(BaseSettings):
     access_token_expire_days: int = 5
     refresh_token_expire_days: int = 30
 
+    # Twilio
+    twilio_account_sid: str = ""
+    twilio_auth_token: str = ""
+    twilio_from_number: str = ""
+
     class Config:
         env_file = ".env"
 
