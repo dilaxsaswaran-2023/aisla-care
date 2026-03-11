@@ -5,6 +5,7 @@ from app.models.consent_record import ConsentRecord
 from app.models.device import Device
 from app.models.gps_location import GpsLocation
 from app.models.message import Message
+from app.models.patient_location import PatientCurrentLocation, PatientLocationRecent
 from app.models.relationship import Relationship
 from app.models.reminder import Reminder
 from app.models.system_config import SystemConfig
@@ -22,6 +23,8 @@ __all__ = [
     "Device",
     "GpsLocation",
     "Message",
+    "PatientCurrentLocation",
+    "PatientLocationRecent",
     "Relationship",
     "Reminder",
     "SystemConfig",
