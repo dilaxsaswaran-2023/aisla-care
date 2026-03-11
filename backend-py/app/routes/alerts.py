@@ -192,7 +192,7 @@ def sos_alert(
     relationships = create_alert_relationships(db, alert.id, user_id)
 
     # Publish SOS event to agent (port 8000) for processing
-    publish_sos_to_agent(str(user_id), body.voice_transcription)
+    publish_sos_to_agent(str(alert.id), str(user_id), body.voice_transcription)
 
     # Build response with alert and relationships
     response = alert.to_dict()

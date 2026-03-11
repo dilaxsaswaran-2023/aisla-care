@@ -32,21 +32,20 @@ def publish_to_agent(event: Dict[str, Any]) -> bool:
         return False
 
 
-def publish_sos_to_agent(patient_id: str, voice_transcription: str | None = None) -> bool:
+def publish_sos_to_agent(alert_id: str, patient_id: str, voice_transcription: str | None = None) -> bool:
     """
     Publish an SOS event to the agent.
     
     Args:
+        alert_id: UUID of the alert record
         patient_id: UUID of the patient who triggered SOS
         voice_transcription: Optional voice message from the patient
     
     Returns:
         True if published successfully to agent, False otherwise
     """
-    import uuid as uuid_module
-    
     event = {
-        "event_id": str(uuid_module.uuid4()),
+        "event_id": alert_id,
         "patient_id": patient_id,
         "timestamp": datetime.utcnow().isoformat(),
         "sos_triggered": True,
