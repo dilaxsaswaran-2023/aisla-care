@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { UserPlus, MessageSquare, Phone, MapPin, Activity, ChevronDown, Settings } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import GeofenceSettingsDialog from './GeofenceSettingsDialog';
+import { PatientLocationModal } from './PatientLocationModal';
 import { useAuth } from '@/contexts/AuthContext';
 import ChatInterface from '@/components/chat/ChatInterface';
 import { Switch } from '@/components/ui/switch';
@@ -46,6 +47,8 @@ export const PatientManagement = () => {
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [geofenceDialogOpen, setGeofenceDialogOpen] = useState(false);
   const [geofencePatient, setGeofencePatient] = useState<Patient | null>(null);
+  const [locationModalOpen, setLocationModalOpen] = useState(false);
+  const [locationPatient, setLocationPatient] = useState<Patient | null>(null);
   const [geofenceLoading, setGeofenceLoading] = useState(false);
   const [geofenceForm, setGeofenceForm] = useState({
     is_geofencing: false,
@@ -446,6 +449,18 @@ export const PatientManagement = () => {
                     <Settings className="w-3.5 h-3.5" />
                     <span className="text-xs">Settings</span>
                   </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5 h-8"
+                    onClick={() => {
+                      setLocationPatient(patient);
+                      setLocationModalOpen(true);
+                    }}
+                  >
+                    <MapPin className="w-3.5 h-3.5" />
+                    <span className="text-xs">Location</span>
+                  </Button>
                 </div>
               </div>
             ))}
@@ -475,6 +490,15 @@ export const PatientManagement = () => {
         onSave={handleSaveGeofence}
         onClose={() => setGeofenceDialogOpen(false)}
       />
+
+      {locationPatient && (
+        <PatientLocationModal
+          open={locationModalOpen}
+          onOpenChange={setLocationModalOpen}
+          patientId={locationPatient.id}
+          patientName={locationPatient.full_name}
+        />
+      )}
     </>
   );
 };
