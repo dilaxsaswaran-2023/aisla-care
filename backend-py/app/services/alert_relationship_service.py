@@ -42,11 +42,8 @@ def create_alert_relationships(
         db.add(alert_rel)
         created_relationships.append(alert_rel)
     
-    if created_relationships:
-        db.commit()
-        # Refresh all to get timestamps
-        for rel in created_relationships:
-            db.refresh(rel)
+    # Note: Caller will handle db.commit()
+    return [rel.to_dict() for rel in created_relationships]
     
     return [rel.to_dict() for rel in created_relationships]
 

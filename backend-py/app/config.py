@@ -17,6 +17,12 @@ class Settings(BaseSettings):
     twilio_auth_token: str = ""
     twilio_from_number: str = ""
 
+    # ── Monitor checks ────────────────────────────────────────────────────────
+    check_sos_enabled: bool = True
+    check_geofence_enabled: bool = True
+    check_inactive_enabled: bool = False
+    check_medication_enabled: bool = False
+
     class Config:
         env_file = ".env"
 

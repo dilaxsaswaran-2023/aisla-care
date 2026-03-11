@@ -16,6 +16,7 @@ interface AlertItem {
   voice_transcription?: string;
   patient_name?: string;
   created_at: string;
+  source?: string; // 'normal' or 'budii'
 }
 
 interface Contact { id: string; name: string; }
@@ -30,22 +31,21 @@ function formatRelativeTime(iso: string): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-const ALERT_TYPE_STYLE: Record<string, { border: string; bg: string; icon: string }> = {
-  sos:        { border: "border-destructive", bg: "bg-destructive/5",  icon: "text-destructive" },
-  fall:       { border: "border-destructive", bg: "bg-destructive/5",  icon: "text-destructive" },
-  geofence:   { border: "border-warning",     bg: "bg-warning/5",      icon: "text-warning" },
-  health:     { border: "border-warning",     bg: "bg-warning/5",      icon: "text-warning" },
-  inactivity: { border: "border-muted",       bg: "bg-muted/30",       icon: "text-muted-foreground" },
-};
-
-function alertStyle(type: string) {
-  return ALERT_TYPE_STYLE[type] ?? ALERT_TYPE_STYLE.inactivity;
+function alertStyle(source?: string) {
+  // Budii alerts always use red
+  if (source === 'budii') {
+    // stronger background and border for serious budii alerts
+    return { border: "border-destructive", bg: "bg-destructive/5", icon: "text-destructive", itemBg: "bg-destructive/10" };
+  }
+  // Normal alerts always use amber
+  return { border: "border-amber-500", bg: "bg-amber-500/10", icon: "text-amber-600", itemBg: "" };
 }
 
 const AlertCard = ({ alert, detailed }: { alert: AlertItem; detailed?: boolean }) => {
-  const s = alertStyle(alert.alert_type);
+  const isBudii = alert.source === 'budii';
+  const s = alertStyle(alert.source);
   return (
-    <div className={`p-4 rounded-lg border-l-4 ${s.border} ${s.bg} transition-all hover:shadow-md`}>
+    <div className={`p-4 rounded-lg border-l-4 ${s.border} ${isBudii ? s.itemBg : s.bg} transition-all hover:shadow-md`}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-3 flex-1">
           <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${s.bg}`}>
@@ -54,6 +54,9 @@ const AlertCard = ({ alert, detailed }: { alert: AlertItem; detailed?: boolean }
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap mb-0.5">
               <p className="font-semibold text-sm">{alert.patient_name ?? "Patient"}</p>
+              {isBudii && (
+                <Badge variant="destructive" className="text-[10px] h-4 px-1.5 font-bold">SERIOUS</Badge>
+              )}
               <Badge variant={alert.priority === "critical" || alert.priority === "high" ? "destructive" : "secondary"} className="text-[10px] h-4 px-1.5">
                 {alert.alert_type.toUpperCase()}
               </Badge>
@@ -96,6 +99,7 @@ const ComingSoon = ({ label }: { label: string }) => (
 interface CaregiverOverviewProps {
   patients: Contact[];
   alerts: AlertItem[];
+  budiiAlerts?: AlertItem[];
   loading: boolean;
   loadingAlerts: boolean;
   onTabChange: (tab: string) => void;
@@ -105,11 +109,16 @@ interface CaregiverOverviewProps {
 export const CaregiverOverview = ({
   patients,
   alerts,
+  budiiAlerts = [],
   loading,
   loadingAlerts,
   onTabChange,
   onRefresh,
 }: CaregiverOverviewProps) => {
+  // Combine and sort alerts by created_at descending
+  const allAlerts = [...alerts, ...budiiAlerts].sort((a, b) => 
+    new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  );
   return (
     <div className="space-y-6">
       {/* Stats row */}
@@ -124,10 +133,10 @@ export const CaregiverOverview = ({
           },
           {
             label: "Active Alerts",
-            value: loadingAlerts ? "…" : alerts.filter(a => a.status === "active").length,
-            sub: alerts.filter(a => a.status === "active").length === 0 ? "No active alerts" : "Requires attention",
+            value: loadingAlerts ? "…" : allAlerts.filter(a => a.status === "active").length,
+            sub: allAlerts.filter(a => a.status === "active").length === 0 ? "No active alerts" : "Requires attention",
             icon: AlertCircle,
-            color: alerts.filter(a => a.status === "active").length > 0 ? "text-destructive" : "text-success",
+            color: allAlerts.filter(a => a.status === "active").length > 0 ? "text-destructive" : "text-success",
           },
           {
             label: "Budii Interactions",
@@ -179,17 +188,17 @@ export const CaregiverOverview = ({
                   <div key={i} className="h-16 rounded-lg bg-muted animate-pulse" />
                 ))}
               </div>
-            ) : alerts.length === 0 ? (
+            ) : allAlerts.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-10 gap-2 text-muted-foreground">
                 <CheckCircle className="w-8 h-8" />
                 <p className="text-sm">No alerts — all clear!</p>
               </div>
             ) : (
-              <div className="space-y-3">
-                {alerts.slice(0, 5).map(a => <AlertCard key={a.id} alert={a} />)}
-                {alerts.length > 5 && (
+              <div className="max-h-[400px] overflow-y-auto space-y-3 pr-2">
+                {allAlerts.slice(0, 10).map(a => <AlertCard key={a.id} alert={a} />)}
+                {allAlerts.length > 10 && (
                   <Button variant="ghost" className="w-full text-primary text-sm" onClick={() => onTabChange("alerts")}>
-                    View all {alerts.length} alerts
+                    View all {allAlerts.length} alerts
                   </Button>
                 )}
               </div>

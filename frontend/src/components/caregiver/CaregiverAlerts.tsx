@@ -13,6 +13,7 @@ interface AlertItem {
   voice_transcription?: string;
   patient_name?: string;
   created_at: string;
+  source?: string; // 'normal' or 'budii'
 }
 
 function formatRelativeTime(iso: string): string {
@@ -25,22 +26,21 @@ function formatRelativeTime(iso: string): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-const ALERT_TYPE_STYLE: Record<string, { border: string; bg: string; icon: string }> = {
-  sos:        { border: "border-destructive", bg: "bg-destructive/5",  icon: "text-destructive" },
-  fall:       { border: "border-destructive", bg: "bg-destructive/5",  icon: "text-destructive" },
-  geofence:   { border: "border-warning",     bg: "bg-warning/5",      icon: "text-warning" },
-  health:     { border: "border-warning",     bg: "bg-warning/5",      icon: "text-warning" },
-  inactivity: { border: "border-muted",       bg: "bg-muted/30",       icon: "text-muted-foreground" },
-};
-
-function alertStyle(type: string) {
-  return ALERT_TYPE_STYLE[type] ?? ALERT_TYPE_STYLE.inactivity;
+function alertStyle(source?: string) {
+  // Budii alerts always use red
+  if (source === 'budii') {
+    // stronger background and border for serious budii alerts
+    return { border: "border-destructive", bg: "bg-destructive/5", icon: "text-destructive", itemBg: "bg-destructive/10" };
+  }
+  // Normal alerts always use amber
+  return { border: "border-amber-500", bg: "bg-amber-500/10", icon: "text-amber-600", itemBg: "" };
 }
 
 const AlertCard = ({ alert }: { alert: AlertItem }) => {
-  const s = alertStyle(alert.alert_type);
+  const isBudii = alert.source === 'budii';
+  const s = alertStyle(alert.source);
   return (
-    <div className={`p-4 rounded-lg border-l-4 ${s.border} ${s.bg} transition-all hover:shadow-md`}>
+    <div className={`p-4 rounded-lg border-l-4 ${s.border} ${isBudii ? s.itemBg : s.bg} transition-all hover:shadow-md`}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-3 flex-1">
           <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${s.bg}`}>
@@ -49,6 +49,9 @@ const AlertCard = ({ alert }: { alert: AlertItem }) => {
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap mb-0.5">
               <p className="font-semibold text-sm">{alert.patient_name ?? "Patient"}</p>
+              {isBudii && (
+                <Badge variant="destructive" className="text-[10px] h-4 px-1.5 font-bold">SERIOUS</Badge>
+              )}
               <Badge variant={alert.priority === "critical" || alert.priority === "high" ? "destructive" : "secondary"} className="text-[10px] h-4 px-1.5">
                 {alert.alert_type.toUpperCase()}
               </Badge>
@@ -81,6 +84,11 @@ export const CaregiverAlerts = ({
   loadingAlerts,
   onRefresh,
 }: CaregiverAlertsProps) => {
+  // Sort alerts by created_at descending (most recent first)
+  const sortedAlerts = [...alerts].sort((a, b) => 
+    new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  );
+
   return (
     <Card className="care-card">
       <CardHeader className="pb-3">
@@ -102,15 +110,15 @@ export const CaregiverAlerts = ({
               <div key={i} className="h-20 rounded-lg bg-muted animate-pulse" />
             ))}
           </div>
-        ) : alerts.length === 0 ? (
+        ) : sortedAlerts.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 gap-3 text-muted-foreground">
             <CheckCircle className="w-10 h-10 text-success" />
             <p className="font-medium text-foreground">No Alerts</p>
             <p className="text-sm">All your patients are safe and sound.</p>
           </div>
         ) : (
-          <div className="space-y-3">
-            {alerts.map(a => <AlertCard key={a.id} alert={a} />)}
+          <div className="max-h-[600px] overflow-y-auto space-y-3 pr-2">
+            {sortedAlerts.map(a => <AlertCard key={a.id} alert={a} />)}
           </div>
         )}
       </CardContent>

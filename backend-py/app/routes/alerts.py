@@ -9,9 +9,10 @@ from app.models.alert_relationship import AlertRelationship
 from app.models.audit_log import AuditLog
 from app.models.gps_location import GpsLocation
 from app.models.user import User
+from fastapi import APIRouter, Depends, HTTPException, Request
 from app.auth import get_current_user
-from app.utils.agent_publisher import publish_sos_to_agent
 from app.services.alert_relationship_service import create_alert_relationships
+from app.services.monitor import MonitorEvent, process_event
 
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
 
@@ -149,7 +150,8 @@ def update_alert(
 
 # POST /api/alerts/sos
 @router.post("/sos", status_code=201)
-def sos_alert(
+async def sos_alert(
+    request: Request,
     body: SOSAlertRequest,
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -191,8 +193,18 @@ def sos_alert(
     # Create alert relationships for all caregivers and family members
     relationships = create_alert_relationships(db, alert.id, user_id)
 
-    # Publish SOS event to agent (port 8000) for processing
-    publish_sos_to_agent(str(alert.id), str(user_id), body.voice_transcription)
+    # Trigger backend monitor service in-process (SOS check + any other enabled checks)
+    sio = getattr(request.app.state, "sio", None)
+    sos_event = MonitorEvent(
+        event_id=str(alert.id),
+        patient_id=str(user_id),
+        timestamp=alert.created_at.isoformat(),
+        sos_triggered=True,
+        sos_triggered_time=alert.created_at.isoformat(),
+        lat=alert.latitude,
+        lng=alert.longitude,
+    )
+    await process_event(sos_event, db, sio)
 
     # Build response with alert and relationships
     response = alert.to_dict()

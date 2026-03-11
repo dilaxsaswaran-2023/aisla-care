@@ -34,6 +34,7 @@ interface AlertItem {
   voice_transcription?: string;
   patient_name?: string;
   created_at: string;
+  source?: string; // 'normal' or 'budii'
 }
 
 const navItems = [
@@ -60,15 +61,14 @@ const NotificationDropdown = ({ alerts, isMobile }: { alerts: AlertItem[]; isMob
     return `${Math.floor(hrs / 24)}d ago`;
   };
 
-  const getAlertStyle = (type: string) => {
-    const styles: Record<string, { bg: string; icon: string }> = {
-      sos:        { bg: "bg-destructive/5",  icon: "text-destructive" },
-      fall:       { bg: "bg-destructive/5",  icon: "text-destructive" },
-      geofence:   { bg: "bg-warning/5",      icon: "text-warning" },
-      health:     { bg: "bg-warning/5",      icon: "text-warning" },
-      inactivity: { bg: "bg-muted/30",       icon: "text-muted-foreground" },
-    };
-    return styles[type] ?? styles.inactivity;
+  const getAlertStyle = (source?: string) => {
+    // Budii alerts always use red
+    if (source === 'budii') {
+      // stronger background for serious budii alerts
+      return { bg: "bg-destructive/10", icon: "text-destructive", itemBg: "bg-destructive/10", border: "border-destructive" };
+    }
+    // Normal alerts always use amber
+    return { bg: "bg-amber-500/10", icon: "text-amber-600", itemBg: "", border: "border-amber-500" };
   };
 
   return (
@@ -109,18 +109,22 @@ const NotificationDropdown = ({ alerts, isMobile }: { alerts: AlertItem[]; isMob
                 </div>
               ) : (
                 alerts.slice(0, 8).map(alert => {
-                  const s = getAlertStyle(alert.alert_type);
+                  const s = getAlertStyle(alert.source);
+                  const isBudii = alert.source === 'budii';
                   return (
-                    <div key={alert.id} className="flex items-start gap-3 px-4 py-3 hover:bg-muted/40 transition-colors">
+                    <div
+                      key={alert.id}
+                      className={`flex items-start gap-3 px-4 py-3 transition-colors ${isBudii ? s.itemBg + ' ' + s.border : ''} hover:bg-muted/40`}
+                    >
                       <div className={`mt-0.5 w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${s.bg}`}>
                         <AlertCircle className={`w-3.5 h-3.5 ${s.icon}`} />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium truncate">{alert.patient_name ?? "Patient"} — {alert.title}</p>
+                        <p className="text-xs font-medium truncate">{alert.patient_name ?? "Patient"} — {alert.title} {isBudii && <span className="text-destructive font-bold">●</span>}</p>
                         <p className="text-[11px] text-muted-foreground mt-0.5">{formatRelativeTime(alert.created_at)}</p>
                       </div>
                       {alert.status === "active" && (
-                        <div className="w-2 h-2 rounded-full bg-destructive shrink-0 mt-1.5" />
+                        <div className={`w-2 h-2 rounded-full ${isBudii ? 'bg-destructive' : 'bg-destructive'} shrink-0 mt-1.5`} />
                       )}
                     </div>
                   );
@@ -145,6 +149,7 @@ const Caregiver = () => {
   const [familyMembers, setFamilyMembers] = useState<FamilyContact[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
+  const [budiiAlerts, setBudiiAlerts] = useState<AlertItem[]>([]);
   const [loadingAlerts, setLoadingAlerts] = useState(true);
   const [loading, setLoading] = useState(true);
 
@@ -160,10 +165,18 @@ const Caregiver = () => {
   const loadAlerts = async () => {
     setLoadingAlerts(true);
     try {
-      const data = await api.get('/alerts/me') as AlertItem[];
-      setAlerts(data || []);
+      // Fetch normal alerts
+      const normalData = await api.get('/alerts/me') as AlertItem[];
+      const normalAlerts = (normalData || []).map(a => ({ ...a, source: 'normal' }));
+      setAlerts(normalAlerts);
+      
+      // Fetch budii alerts (serious ones)
+      const budiiData = await api.get('/budii-alerts/me') as AlertItem[];
+      const budiiAlertsWithSource = (budiiData || []).map(a => ({ ...a, source: 'budii' }));
+      setBudiiAlerts(budiiAlertsWithSource);
     } catch {
       setAlerts([]);
+      setBudiiAlerts([]);
     }
     setLoadingAlerts(false);
   };
@@ -230,7 +243,7 @@ const Caregiver = () => {
             <RefreshCw className="w-4 h-4" />
             {!isMobile && <span className="hidden sm:inline text-xs">Refresh</span>}
           </Button>
-          <NotificationDropdown alerts={alerts} isMobile={isMobile} />
+          <NotificationDropdown alerts={[...budiiAlerts, ...alerts]} isMobile={isMobile} />
         </div>
       }
     >
@@ -238,6 +251,7 @@ const Caregiver = () => {
         <CaregiverOverview
           patients={patients}
           alerts={alerts}
+          budiiAlerts={budiiAlerts}
           loading={loading}
           loadingAlerts={loadingAlerts}
           onTabChange={handleTabChange}
@@ -257,7 +271,7 @@ const Caregiver = () => {
       {activeTab === "tasks" && <CaregiverTasks />}
       {activeTab === "alerts" && (
         <CaregiverAlerts
-          alerts={alerts}
+          alerts={[...budiiAlerts, ...alerts]}
           loadingAlerts={loadingAlerts}
           onRefresh={onRefresh}
         />
