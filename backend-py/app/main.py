@@ -25,6 +25,7 @@ from app.routes.audit_logs import router as audit_logs_router
 from app.routes.consent_records import router as consent_records_router
 from app.routes.geofence import router as geofence_router
 from app.routes.ai import router as ai_router
+from app.routes.budii import router as budii_router
 
 settings = get_settings()
 
@@ -182,9 +183,9 @@ async def call_end(sid, data):
     """WebRTC call ended."""
     await sio.emit("call-ended", data, room=data.get("to"))
 
-
 # ── FastAPI app ──────────────────────────────────────────────────────────────
 app = FastAPI(title="AISLA Care Backend", lifespan=lifespan)
+app.state.sio = sio
 
 # CORS
 app.add_middleware(
@@ -212,14 +213,13 @@ app.include_router(audit_logs_router)
 app.include_router(consent_records_router)
 app.include_router(geofence_router)
 app.include_router(ai_router)
-
+app.include_router(budii_router)
 
 # Health check
 @app.get("/api/health")
 def health():
     """Health check endpoint."""
     return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
-
 
 # Mount Socket.IO on the FastAPI app
 socket_app = socketio.ASGIApp(sio, app)
