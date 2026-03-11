@@ -20,6 +20,7 @@ class Alert(Base):
     priority = Column(String, nullable=False, default="medium")
     title = Column(String, nullable=False)
     message = Column(String, nullable=False, default="")
+    voice_transcription = Column(String, nullable=True)
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -35,6 +36,7 @@ class Alert(Base):
             "priority": self.priority,
             "title": self.title,
             "message": self.message,
+            "voice_transcription": self.voice_transcription,
             "latitude": self.latitude,
             "longitude": self.longitude,
             "created_at": self.created_at.isoformat() if self.created_at else None,

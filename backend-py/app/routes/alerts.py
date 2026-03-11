@@ -1,5 +1,6 @@
 import uuid
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -7,8 +8,15 @@ from app.models.alert import Alert
 from app.models.audit_log import AuditLog
 from app.models.gps_location import GpsLocation
 from app.auth import get_current_user
+from app.utils.agent_publisher import publish_sos_to_agent
 
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
+
+
+# Request models
+class SOSAlertRequest(BaseModel):
+    voice_transcription: str | None = None
+    message: str | None = None
 
 
 # GET /api/alerts
@@ -80,6 +88,7 @@ def update_alert(
 # POST /api/alerts/sos
 @router.post("/sos", status_code=201)
 def sos_alert(
+    body: SOSAlertRequest,
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -98,7 +107,8 @@ def sos_alert(
         status="active",
         priority="critical",
         title="SOS Emergency Alert",
-        message="Patient triggered SOS button",
+        message=body.message or "Patient triggered SOS button",
+        voice_transcription=body.voice_transcription,
         latitude=latest_gps.latitude if latest_gps else None,
         longitude=latest_gps.longitude if latest_gps else None,
     )
@@ -111,9 +121,12 @@ def sos_alert(
         action="sos_alert_created",
         entity_type="alert",
         entity_id=str(alert.id),
-        metadata_={"priority": "critical"},
+        metadata_={"priority": "critical", "has_voice": bool(body.voice_transcription)},
     )
     db.add(audit)
     db.commit()
+
+    # Publish SOS event to agent (port 8000) for processing
+    publish_sos_to_agent(str(user_id), body.voice_transcription)
 
     return alert.to_dict()

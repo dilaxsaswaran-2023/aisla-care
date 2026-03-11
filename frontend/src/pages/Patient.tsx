@@ -9,6 +9,7 @@ import BudiiChat from "@/components/patient/BudiiChat";
 import RemindersList from "@/components/patient/RemindersList";
 import ChatInterface from "@/components/chat/ChatInterface";
 import VoiceCall from "@/components/communication/VoiceCall";
+import SOSPopup from "@/components/patient/SOSPopup";
 import { Badge } from "@/components/ui/badge";
 
 interface Relationship {
@@ -28,6 +29,7 @@ const Patient = () => {
   const [showBudii, setShowBudii] = useState(false);
   const [showChat, setShowChat] = useState(false);
   const [showCall, setShowCall] = useState(false);
+  const [isSOSOpen, setIsSOSOpen] = useState(false);
   const [caregiverId, setCaregiverId] = useState<string | null>(null);
   const [chatContact, setChatContact] = useState<ChatContact | null>(null);
   const [relationships, setRelationships] = useState<Relationship[]>([]);
@@ -100,17 +102,7 @@ const Patient = () => {
   }, [user]);
 
   const handleSOS = async () => {
-    try {
-      await api.post('/alerts/sos');
-    } catch (error) {
-      console.error('SOS error:', error);
-    }
-
-    toast({
-      title: "SOS Alert Sent!",
-      description: "Your caregiver has been notified and will contact you soon.",
-      variant: "destructive",
-    });
+    setIsSOSOpen(true);
   };
 
   const BackButton = ({ onClick }: { onClick: () => void }) => (
@@ -164,113 +156,116 @@ const Patient = () => {
   ];
 
   return (
-    <PatientShell onSignOut={signOut}>
-      <div className="space-y-6">
-        {/* Welcome */}
-        <div className="pt-2 pb-2">
-          <h2 className="text-2xl font-bold text-foreground tracking-tight">Welcome back 👋</h2>
-          <p className="text-sm text-muted-foreground mt-1">How can we help you today?</p>
-        </div>
+    <>
+      <PatientShell onSignOut={signOut}>
+        <div className="space-y-6">
+          {/* Welcome */}
+          <div className="pt-2 pb-2">
+            <h2 className="text-2xl font-bold text-foreground tracking-tight">Welcome back 👋</h2>
+            <p className="text-sm text-muted-foreground mt-1">How can we help you today?</p>
+          </div>
 
-        {/* SOS */}
-        <Card className="care-card border-destructive/20 overflow-hidden">
-          <CardContent className="p-6">
-            <Button onClick={handleSOS} className="sos-button sos-pulse w-full h-28 text-xl font-bold gap-4" size="lg">
-              <AlertCircle className="w-10 h-10" />
-              SOS — NEED HELP
-            </Button>
-            <p className="text-center text-xs text-muted-foreground mt-3">
-              Press if you need immediate assistance
-            </p>
-          </CardContent>
-        </Card>
+          {/* SOS */}
+          <Card className="care-card border-destructive/20 overflow-hidden">
+            <CardContent className="p-6">
+              <Button onClick={handleSOS} className="sos-button sos-pulse w-full h-28 text-xl font-bold gap-4" size="lg">
+                <AlertCircle className="w-10 h-10" />
+                SOS — NEED HELP
+              </Button>
+              <p className="text-center text-xs text-muted-foreground mt-3">
+                Press if you need immediate assistance
+              </p>
+            </CardContent>
+          </Card>
 
-        {/* Quick actions */}
-        <div className="space-y-2">
-          {actions.map((action) => {
-            const Icon = action.icon;
-            return (
-              <button
-                key={action.label}
-                onClick={action.onClick}
-                className="care-card w-full flex items-center gap-4 p-4 text-left hover:border-primary/20 transition-all"
-              >
-                <div className={`w-11 h-11 rounded-xl flex items-center justify-center ${action.color}`}>
-                  <Icon className="w-5 h-5" />
-                </div>
-                <div className="flex-1">
-                  <p className="font-semibold text-sm text-foreground">{action.label}</p>
-                  <p className="text-xs text-muted-foreground">{action.desc}</p>
-                </div>
-                <ChevronRight className="w-4 h-4 text-muted-foreground/50" />
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Reminders */}
-        <Card className="care-card">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Bell className="w-4 h-4 text-muted-foreground" />
-              Your Reminders
-            </CardTitle>
-          </CardHeader>
-          <CardContent><RemindersList /></CardContent>
-        </Card>
-
-        {/* Care Team */}
-        <Card className="care-card">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Users className="w-4 h-4 text-muted-foreground" />
-              My Care Team
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {relationships.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">No care team members assigned yet</p>
-            ) : (
-              <div className="space-y-2">
-                {relationships.map((rel) => (
-                  <div key={rel.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                    <div>
-                      <p className="font-medium text-sm">{rel.related_user_name}</p>
-                      <Badge variant={rel.relationship_type === 'caregiver' ? 'default' : 'secondary'} className="mt-1 text-[10px]">
-                        {rel.relationship_type === 'caregiver' ? 'Caregiver' : 'Family'}
-                      </Badge>
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="gap-1.5 shrink-0"
-                      onClick={() => {
-                        setChatContact({ id: rel.related_user_id, name: rel.related_user_name });
-                        setShowChat(true);
-                      }}
-                    >
-                      <MessageSquare className="w-3.5 h-3.5" />
-                      Chat
-                    </Button>
+          {/* Quick actions */}
+          <div className="space-y-2">
+            {actions.map((action) => {
+              const Icon = action.icon;
+              return (
+                <button
+                  key={action.label}
+                  onClick={action.onClick}
+                  className="care-card w-full flex items-center gap-4 p-4 text-left hover:border-primary/20 transition-all"
+                >
+                  <div className={`w-11 h-11 rounded-xl flex items-center justify-center ${action.color}`}>
+                    <Icon className="w-5 h-5" />
                   </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                  <div className="flex-1">
+                    <p className="font-semibold text-sm text-foreground">{action.label}</p>
+                    <p className="text-xs text-muted-foreground">{action.desc}</p>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-muted-foreground/50" />
+                </button>
+              );
+            })}
+          </div>
 
-        {/* Info */}
-        <div className="bg-accent/50 border border-primary/10 rounded-xl p-4 flex items-start gap-3">
-          <Heart className="w-5 h-5 text-primary mt-0.5 flex-shrink-0" />
-          <div>
-            <p className="font-semibold text-sm text-foreground mb-1">You're Safe & Connected</p>
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              Your caregiver can see your location and is always available to help.
-            </p>
+          {/* Reminders */}
+          <Card className="care-card">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Bell className="w-4 h-4 text-muted-foreground" />
+                Your Reminders
+              </CardTitle>
+            </CardHeader>
+            <CardContent><RemindersList /></CardContent>
+          </Card>
+
+          {/* Care Team */}
+          <Card className="care-card">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Users className="w-4 h-4 text-muted-foreground" />
+                My Care Team
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {relationships.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">No care team members assigned yet</p>
+              ) : (
+                <div className="space-y-2">
+                  {relationships.map((rel) => (
+                    <div key={rel.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                      <div>
+                        <p className="font-medium text-sm">{rel.related_user_name}</p>
+                        <Badge variant={rel.relationship_type === 'caregiver' ? 'default' : 'secondary'} className="mt-1 text-[10px]">
+                          {rel.relationship_type === 'caregiver' ? 'Caregiver' : 'Family'}
+                        </Badge>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5 shrink-0"
+                        onClick={() => {
+                          setChatContact({ id: rel.related_user_id, name: rel.related_user_name });
+                          setShowChat(true);
+                        }}
+                      >
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        Chat
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Info */}
+          <div className="bg-accent/50 border border-primary/10 rounded-xl p-4 flex items-start gap-3">
+            <Heart className="w-5 h-5 text-primary mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="font-semibold text-sm text-foreground mb-1">You're Safe & Connected</p>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Your caregiver can see your location and is always available to help.
+              </p>
+            </div>
           </div>
         </div>
-      </div>
-    </PatientShell>
+      </PatientShell>
+      <SOSPopup isOpen={isSOSOpen} onClose={() => setIsSOSOpen(false)} />
+    </>
   );
 };
 
