@@ -16,6 +16,8 @@ from database.db import get_session  # also sets up sys.path + imports models
 from app.models.user import User
 from app.models.medication_schedule import MedicationSchedule
 from app.models.patient_active_hours import PatientActiveHours
+from sqlalchemy import desc
+from app.models.alert import Alert
 
 logger = logging.getLogger("budii.queries")
 
@@ -102,3 +104,15 @@ def get_active_hours(patient_id: str) -> Optional[dict]:
     finally:
         session.close()
 
+
+def get_last_sos_alert_before(db, patient_id, current_time):
+    return (
+        db.query(Alert)
+        .filter(
+            Alert.patient_id == patient_id,
+            Alert.alert_type == "sos",
+            Alert.created_at < current_time
+        )
+        .order_by(desc(Alert.created_at))
+        .offset(1).first()
+    )
