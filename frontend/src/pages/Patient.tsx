@@ -85,10 +85,12 @@ const Patient = () => {
     if ('geolocation' in navigator) {
       navigator.geolocation.watchPosition(
         (position) => {
-          api.post('/gps', {
+          api.post('/gps/patient/location', {
+            patient_id: user?.id,
             latitude: position.coords.latitude,
             longitude: position.coords.longitude,
-            accuracy: position.coords.accuracy
+            accuracy: position.coords.accuracy,
+            captured_at: new Date().toISOString(),
           }).catch(err => console.error('GPS save error:', err));
         },
         (error) => console.error('GPS error:', error),

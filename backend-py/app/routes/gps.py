@@ -65,6 +65,7 @@ def save_patient_location(
     Updates:
     - patient_current_location (current position)
     - patient_location_recent (add to history, keep last 10)
+    - Ignores duplicate locations (same coordinates within ~5m)
     """
     patient_id = body.get("patient_id") or current_user["userId"]
     lat = body.get("latitude") or body.get("lat")
@@ -75,7 +76,7 @@ def save_patient_location(
     if captured_at and isinstance(captured_at, str):
         captured_at = datetime.fromisoformat(captured_at)
 
-    update_patient_location(
+    was_updated = update_patient_location(
         db,
         patient_id,
         lat,
@@ -90,6 +91,7 @@ def save_patient_location(
         "lat": lat,
         "lng": lng,
         "accuracy": accuracy,
+        "stored": was_updated,  # False if duplicate, True if stored
     }
 
 
