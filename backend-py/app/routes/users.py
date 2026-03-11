@@ -106,25 +106,29 @@ def get_patients(
     db: Session = Depends(get_db),
 ):
     user_id = uuid.UUID(current_user["userId"])
-    rels = db.query(Relationship).filter(Relationship.related_user_id == user_id).all()
-    patient_ids = [r.patient_id for r in rels]
+    
+    # Get all patients where the current user is the caregiver
+    patients = db.query(User).filter(
+        User.caregiver_id == user_id,
+        User.role == "patient"
+    ).all()
 
-    patients = db.query(User).filter(User.id.in_(patient_ids)).all()
+    patient_ids = [p.id for p in patients]
 
     # Family members linked to the caregiver's patients
     family_rels = db.query(Relationship).filter(
         Relationship.patient_id.in_(patient_ids),
         Relationship.relationship_type == "family",
-    ).all()
+    ).all() if patient_ids else []
 
     # Build mapping: family_member_id → patient_name
-    patient_map = {str(p.id): p.full_name for p in patients}
+    patient_map = {p.id: p.full_name for p in patients}
     fm_to_patient: dict[str, str] = {}
     for rel in family_rels:
-        fm_to_patient[str(rel.related_user_id)] = patient_map.get(str(rel.patient_id), "Patient")
+        fm_to_patient[str(rel.related_user_id)] = patient_map.get(rel.patient_id, "Patient")
 
     family_ids = list({r.related_user_id for r in family_rels})
-    family_members = db.query(User).filter(User.id.in_(family_ids)).all()
+    family_members = db.query(User).filter(User.id.in_(family_ids)).all() if family_ids else []
 
     family_result = []
     for f in family_members:
@@ -159,13 +163,13 @@ def get_corporate_users(
     return [u.to_dict() for u in users]
 
 
-# ─── GET /api/users/stats/:userId ────────────────────────────────────────────
-@router.get("/stats/{user_id}")
-def get_user_stats(
-    user_id: str,
+# ─── GET /api/users/stats/me ─────────────────────────────────────────────────
+@router.get("/stats/me")
+def get_user_stats_me(
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    user_id = current_user["userId"]
     target = db.query(User).filter(User.id == uuid.UUID(user_id)).first()
     if not target:
         raise HTTPException(404, "User not found")
@@ -200,7 +204,6 @@ def get_user_stats(
             base_stats["family"] += 1
 
     return base_stats
-
 
 # ─── POST /api/users ─────────────────────────────────────────────────────────
 @router.post("/", status_code=201)

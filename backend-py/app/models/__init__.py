@@ -1,4 +1,5 @@
 from app.models.alert import Alert
+from app.models.alert_relationship import AlertRelationship
 from app.models.audit_log import AuditLog
 from app.models.consent_record import ConsentRecord
 from app.models.device import Device
@@ -15,6 +16,7 @@ from app.models.agent_event import AgentEvent
 
 __all__ = [
     "Alert",
+    "AlertRelationship",
     "AuditLog",
     "ConsentRecord",
     "Device",

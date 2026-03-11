@@ -63,7 +63,7 @@ const Admin = () => {
     const loadStats = async () => {
       try {
         if (user?.id) {
-          const data = await api.get(`/users/stats/${user.id}`);
+          const data = await api.get("/users/stats/me") as Stats;
           setStats(data as Stats);
         }
       } catch (error) {

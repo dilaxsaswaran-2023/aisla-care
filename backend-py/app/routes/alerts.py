@@ -5,10 +5,13 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.alert import Alert
+from app.models.alert_relationship import AlertRelationship
 from app.models.audit_log import AuditLog
 from app.models.gps_location import GpsLocation
+from app.models.user import User
 from app.auth import get_current_user
 from app.utils.agent_publisher import publish_sos_to_agent
+from app.services.alert_relationship_service import create_alert_relationships
 
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
 
@@ -29,6 +32,56 @@ def list_alerts(
     return [a.to_dict() for a in alerts]
 
 
+# GET /api/alerts/me — returns alerts linked to current user via alert_relationships
+@router.get("/me")
+def my_alerts(
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Returns all alerts where the logged-in user appears as caregiver_id or family_id
+    in the alert_relationships table. Enriches each alert with the patient's name.
+    """
+    user_id = uuid.UUID(current_user["userId"])
+
+    # Find all alert_ids linked to this user (as caregiver or family)
+    relationships = (
+        db.query(AlertRelationship)
+        .filter(
+            (AlertRelationship.caregiver_id == user_id) |
+            (AlertRelationship.family_id == user_id)
+        )
+        .all()
+    )
+
+    print(f"Found {len(relationships)} alert relationships for user {user_id}")
+
+    alert_ids = list({rel.alert_id for rel in relationships})
+
+    if not alert_ids:
+        return []
+
+    alerts = (
+        db.query(Alert)
+        .filter(Alert.id.in_(alert_ids))
+        .order_by(Alert.created_at.desc())
+        .limit(50)
+        .all()
+    )
+
+    # Enrich alerts with patient name
+    result = []
+    for alert in alerts:
+        data = alert.to_dict()
+        patient = db.query(User).filter(User.id == alert.patient_id).first()
+        data["patient_name"] = patient.full_name if patient else "Unknown"
+        result.append(data)
+
+    return result
+
+
+
+
 # POST /api/alerts
 @router.post("/", status_code=201)
 def create_alert(
@@ -36,8 +89,10 @@ def create_alert(
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    patient_id = uuid.UUID(body["patient_id"])
+    
     alert = Alert(
-        patient_id=uuid.UUID(body["patient_id"]),
+        patient_id=patient_id,
         alert_type=body["alert_type"],
         status=body.get("status", "active"),
         priority=body.get("priority", "medium"),
@@ -61,7 +116,14 @@ def create_alert(
     db.add(audit)
     db.commit()
 
-    return alert.to_dict()
+    # Create alert relationships for all caregivers and family members
+    relationships = create_alert_relationships(db, alert.id, patient_id)
+
+    # Build response with alert and relationships
+    response = alert.to_dict()
+    response["relationships"] = relationships
+    
+    return response
 
 
 # PATCH /api/alerts/:id
@@ -126,7 +188,14 @@ def sos_alert(
     db.add(audit)
     db.commit()
 
+    # Create alert relationships for all caregivers and family members
+    relationships = create_alert_relationships(db, alert.id, user_id)
+
     # Publish SOS event to agent (port 8000) for processing
     publish_sos_to_agent(str(user_id), body.voice_transcription)
 
-    return alert.to_dict()
+    # Build response with alert and relationships
+    response = alert.to_dict()
+    response["relationships"] = relationships
+    
+    return response

@@ -56,7 +56,7 @@ const SuperAdmin = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [activeTab, setActiveTab] = useState('overview');
-  const [stats, setStats]         = useState<Stats>({ total: 0, admins: 0, caregivers: 0, patients: 0, family: 0 });
+  const [stats, setStats]         = useState<Stats>({ total: 0, admins: 0, caregivers: 0, patients: 0, family: 0, role: '', userId: '' });
   const [admins, setAdmins]       = useState<AdminUser[]>([]);
   const [loadingAdmins, setLoadingAdmins] = useState(false);
 
@@ -82,7 +82,7 @@ const SuperAdmin = () => {
   // ── Stats ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (user?.id) {
-      api.get(`/users/stats/${user.id}`)
+      api.get(`/users/stats/me`)
         .then(d => setStats(d as Stats))
         .catch(err => console.error('Stats error:', err));
     }
@@ -120,7 +120,7 @@ const SuperAdmin = () => {
       toast({ title: 'Admin created', description: `${form.email} can now log in.` });
       // refresh stats
       if (user?.id) {
-        api.get(`/users/stats/${user.id}`).then(d => setStats(d as Stats)).catch(() => {});
+        api.get(`/users/stats/me`).then(d => setStats(d as Stats)).catch(() => {});
       }
     } catch (err: any) {
       toast({ title: 'Failed to create admin', description: err.message, variant: 'destructive' });
@@ -136,7 +136,7 @@ const SuperAdmin = () => {
       setAdmins(prev => prev.filter(a => (a._id || a.id) !== (admin._id || admin.id)));
       toast({ title: 'Admin removed', description: `${admin.email} has been deleted.` });
       if (user?.id) {
-        api.get(`/users/stats/${user.id}`).then(d => setStats(d as Stats)).catch(() => {});
+        api.get(`/users/stats/me`).then(d => setStats(d as Stats)).catch(() => {});
       }
     } catch (err: any) {
       toast({ title: 'Failed to delete admin', description: err.message, variant: 'destructive' });
