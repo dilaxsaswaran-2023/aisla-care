@@ -1,4 +1,9 @@
 {
+  "scripts": {
+    "mobile:android": "npm --prefix mobile run android",
+    "mobile:ios": "npm --prefix mobile run ios",
+    "mobile:start": "npm --prefix mobile run start"
+  },
   "dependencies": {
     "hls.js": "^1.6.15"
   }
