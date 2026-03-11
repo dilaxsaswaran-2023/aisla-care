@@ -11,6 +11,12 @@ _BACKEND_DIR = Path(__file__).resolve().parents[3] / "backend-py"
 if str(_BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(_BACKEND_DIR))
 
+# Load backend-py .env BEFORE importing any backend-py modules so that
+# pydantic-settings picks up DATABASE_URL / Twilio creds correctly
+# regardless of the working directory the agent is started from.
+from dotenv import load_dotenv  # noqa: E402
+load_dotenv(dotenv_path=_BACKEND_DIR / ".env", override=True)
+
 from fastapi import FastAPI
 import uvicorn
 

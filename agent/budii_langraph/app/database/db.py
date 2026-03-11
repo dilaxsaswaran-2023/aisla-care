@@ -18,6 +18,12 @@ _BACKEND_DIR = Path(__file__).resolve().parents[4] / "backend-py"
 if str(_BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(_BACKEND_DIR))
 
+# Load backend-py .env BEFORE importing backend-py database config so that
+# SQLAlchemy engine gets the correct DATABASE_URL (and Twilio credentials)
+# regardless of the current working directory.
+from dotenv import load_dotenv  # noqa: E402
+load_dotenv(dotenv_path=_BACKEND_DIR / ".env", override=True)
+
 # ---------------------------------------------------------------------------
 # Shared imports from backend-py
 # ---------------------------------------------------------------------------
