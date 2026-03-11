@@ -1,25 +1,45 @@
+import logging
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from typing import Any, Dict, List
 
+logger = logging.getLogger("aisla.budii")
+
 router = APIRouter(prefix="/api/internal", tags=["Internal Budii"])
 
 
+class BudiiRuleResult(BaseModel):
+    triggered: bool | None = None
+    case: str | None = None
+    action: str | None = None
+    reason: str | None = None
+
+
 class BudiiAction(BaseModel):
-    type: str
-    message: str | None = None
-    metadata: Dict[str, Any] | None = None
+    case: str
+    action: str
+    reason: str | None = None
+
+
+class BudiiResult(BaseModel):
+    triggered: bool
+    rules_triggered: List[BudiiRuleResult] = []
 
 
 class BudiiAlertPayload(BaseModel):
     event_id: str
     patient_id: str
-    result: Dict[str, Any]
+    result: BudiiResult
     actions: List[BudiiAction] = []
-
+router = APIRouter(prefix="/api/internal", tags=["Internal Budii"])
 
 @router.post("/budii-alert")
 async def receive_budii_alert(payload: BudiiAlertPayload, request: Request):
+    logger.info(
+        f"[BUDII] Received event_id={payload.event_id} "
+        f"patient_id={payload.patient_id} actions={payload.actions}"
+    )
+
     internal_key = request.headers.get("X-Internal-Key")
     if internal_key != "budii-secret-123":
         raise HTTPException(status_code=401, detail="Unauthorized")
@@ -34,18 +54,13 @@ async def receive_budii_alert(payload: BudiiAlertPayload, request: Request):
         alert_data = {
             "patient_id": payload.patient_id,
             "event_id": payload.event_id,
-            "type": action.type,
-            "title": action.type.replace("_", " ").title(),
-            "message": action.message or "Budii generated alert",
+            "type": action.action,
+            "title": action.case.replace("_", " ").title(),
+            "message": action.reason or "Budii generated alert",
             "status": "active",
         }
 
-        # TODO: save alert_data to your alerts table here
-        # Example:
-        # saved_alert = create_alert(db, alert_data)
-
         created_alerts.append(alert_data)
-
         await sio.emit("new_alert", alert_data)
 
     return {

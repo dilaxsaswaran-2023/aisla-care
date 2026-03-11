@@ -29,6 +29,13 @@ from app.routes.budii import router as budii_router
 
 settings = get_settings()
 
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+)
+
 # Track online users: {user_id: sid}
 _online_users: dict[str, str] = {}
 

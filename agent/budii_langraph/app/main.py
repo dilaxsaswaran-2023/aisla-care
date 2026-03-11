@@ -73,7 +73,7 @@ def receive_event(event: IncomingEvent):
         }),
         "actions": result_state.get("actions", [])
     }
-
+    logger.info(f"payload:{payload}")
     actions = payload.get("actions", [])
 
     if actions:
