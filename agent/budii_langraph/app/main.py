@@ -61,7 +61,7 @@ import requests
 @app.post("/events")
 def receive_event(event: IncomingEvent):
     logger.info(f"[MAIN] Received event={event.event_id}")
-
+    logger.info(f"[MAIN]  {event}")
     result_state = graph.invoke({"event": event})
 
     payload = {

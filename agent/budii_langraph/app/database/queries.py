@@ -16,6 +16,9 @@ from database.db import get_session  # also sets up sys.path + imports models
 from app.models.user import User
 from app.models.medication_schedule import MedicationSchedule
 from app.models.patient_active_hours import PatientActiveHours
+from app.models.patient_location import PatientCurrentLocation
+from sqlalchemy import desc
+from app.models.alert import Alert
 
 logger = logging.getLogger("budii.queries")
 
@@ -102,3 +105,33 @@ def get_active_hours(patient_id: str) -> Optional[dict]:
     finally:
         session.close()
 
+def get_last_sos_alert_before(db, patient_id, current_time):
+    return (
+        db.query(Alert)
+        .filter(
+            Alert.patient_id == patient_id,
+            Alert.alert_type == "sos",
+            Alert.created_at < current_time,
+        )
+        .order_by(desc(Alert.created_at))
+        .offset(1).first()
+    )
+
+
+
+def get_current_location(patient_id: str) -> Optional[dict]:
+    patient_uuid = _to_uuid(patient_id)
+    if patient_uuid is None:
+        logger.warning(f"[QUERY] get_current_location: invalid UUID '{patient_id}'")
+        return None
+
+    session = get_session()
+    try:
+        row = (
+            session.query(PatientCurrentLocation)
+            .filter(PatientCurrentLocation.patient_id == patient_uuid)
+            .first()
+        )
+        return row.to_dict() if row else None
+    finally:
+        session.close()
