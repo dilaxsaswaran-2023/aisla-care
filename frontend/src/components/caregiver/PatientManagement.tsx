@@ -38,7 +38,7 @@ const samplePatients: Patient[] = [
   { id: 'sample-3', full_name: 'Patricia Wilson', phone: '+44 7700 900789', address: '8 Pine Street, Bristol', email: 'patricia@example.com', role: 'patient' },
 ];
 
-export const PatientManagement = () => {
+export const PatientManagement = ({ isMobile }: { isMobile?: boolean }) => {
   const { toast } = useToast();
   const { user } = useAuth();
   const [patients, setPatients] = useState<Patient[]>([]);
@@ -410,31 +410,38 @@ export const PatientManagement = () => {
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 flex-wrap">
                   <Badge variant="outline" className="text-xs gap-1">
                     <Activity className="w-3 h-3" />
                     Active
                   </Badge>
                   <Button
                     size="sm"
-                    variant="outline"
-                    className="gap-1.5 h-8"
+                    variant={isMobile ? "ghost" : "outline"}
+                    className={`gap-1.5 h-8 ${isMobile ? "p-2" : ""}`}
+                    title="Chat"
                     onClick={() => {
                       setSelectedPatient(patient);
                       setChatOpen(true);
                     }}
                   >
                     <MessageSquare className="w-3.5 h-3.5" />
-                    Chat
+                    {!isMobile && <span className="text-xs">Chat</span>}
                   </Button>
-                  <Button size="sm" variant="outline" className="gap-1.5 h-8">
+                  <Button 
+                    size="sm" 
+                    variant={isMobile ? "ghost" : "outline"} 
+                    className={`gap-1.5 h-8 ${isMobile ? "p-2" : ""}`}
+                    title="Call"
+                  >
                     <Phone className="w-3.5 h-3.5" />
-                    Call
+                    {!isMobile && <span className="text-xs">Call</span>}
                   </Button>
                   <Button
                     size="sm"
-                    variant="outline"
-                    className="gap-1.5 h-8"
+                    variant={isMobile ? "ghost" : "outline"}
+                    className={`gap-1.5 h-8 ${isMobile ? "p-2" : ""}`}
+                    title="Settings"
                     onClick={() => {
                       setGeofencePatient(patient);
                       setGeofenceForm({
@@ -447,19 +454,20 @@ export const PatientManagement = () => {
                     }}
                   >
                     <Settings className="w-3.5 h-3.5" />
-                    <span className="text-xs">Settings</span>
+                    {!isMobile && <span className="text-xs">Settings</span>}
                   </Button>
                   <Button
                     size="sm"
-                    variant="outline"
-                    className="gap-1.5 h-8"
+                    variant={isMobile ? "ghost" : "outline"}
+                    className={`gap-1.5 h-8 ${isMobile ? "p-2" : ""}`}
+                    title="Location"
                     onClick={() => {
                       setLocationPatient(patient);
                       setLocationModalOpen(true);
                     }}
                   >
                     <MapPin className="w-3.5 h-3.5" />
-                    <span className="text-xs">Location</span>
+                    {!isMobile && <span className="text-xs">Location</span>}
                   </Button>
                 </div>
               </div>
