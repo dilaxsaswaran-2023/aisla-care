@@ -45,10 +45,7 @@ def run_geofence_check_for_all_patients():
         )
         
         if not patients:
-            logger.debug("[GEOFENCE_SCHEDULER] No patients with geofencing enabled")
             return
-        
-        logger.info(f"[GEOFENCE_SCHEDULER] Checking {len(patients)} patients")
         
         for patient in patients:
             # Get patient's current location
@@ -59,7 +56,6 @@ def run_geofence_check_for_all_patients():
             )
             
             if location is None:
-                logger.debug(f"[GEOFENCE_SCHEDULER] No location data for patient {patient.id}")
                 continue
             
             # Create a MonitorEvent from the patient's current location
@@ -81,10 +77,6 @@ def run_geofence_check_for_all_patients():
             # Process triggered rules
             for rule in rules:
                 if rule["case"] == "GEOFENCE_BREACH":
-                    logger.warning(
-                        f"[GEOFENCE_SCHEDULER] Geofence breach detected for patient {patient.id} "
-                        f"distance={rule['context'].get('distance_meters')}m"
-                    )
                     # Create breach record first
                     breach = GeofenceBreachEvent(
                         patient_id=patient.id,
@@ -125,12 +117,10 @@ def run_geofence_check_for_all_patients():
                     db.flush()
                     create_budii_alert_relationships(db, patient_alert.id, patient.id)
 
-                    db.commit()                 
-           
+                    db.commit()
                     logger.info(f"[GEOFENCE_SCHEDULER] Created geofence breach alert for patient {patient.id}")
     
-    except Exception as e:
-        logger.exception(f"[GEOFENCE_SCHEDULER] Error in scheduled geofence check: {type(e).__name__}: {e}")
+    except Exception:
         if db:
             db.rollback()
     finally:
