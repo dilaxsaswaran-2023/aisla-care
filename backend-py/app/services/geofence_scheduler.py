@@ -18,6 +18,7 @@ from app.services.monitor.checks.check_geofence import check_geofence
 from app.services.budii_alert_relationship_service import create_budii_alert_relationships
 from app.services.alert_relationship_service import create_alert_relationships
 from app.models.alert import Alert
+from app.models.geofence_breach_event import GeofenceBreachEvent
 
 logger = logging.getLogger("geofence.scheduler")
 
@@ -84,7 +85,16 @@ def run_geofence_check_for_all_patients():
                         f"[GEOFENCE_SCHEDULER] Geofence breach detected for patient {patient.id} "
                         f"distance={rule['context'].get('distance_meters')}m"
                     )
-                    
+                    # Create breach record first
+                    breach = GeofenceBreachEvent(
+                        patient_id=patient.id,
+                        latitude=location.lat,
+                        longitude=location.lng,
+                        distance_meters=rule["context"].get("distance_meters"),
+                        breached_at=datetime.utcnow(),
+                    )
+                    db.add(breach)
+                    db.flush()   # now breach.id is available
                     # Create main Alert (frontend-visible)
                     alert = Alert(
                         patient_id=patient.id,
@@ -97,15 +107,13 @@ def run_geofence_check_for_all_patients():
                         longitude=location.lng,
                     )
                     db.add(alert)
-                    db.flush()  # Get alert.id before creating relationships
-                    
-                    # Create alert relationships for caregivers and family members
+                    db.flush()
                     create_alert_relationships(db, alert.id, patient.id)
-                    
-                    # Also create PatientAlert for audit log
+
+                    # PatientAlert uses breach.id as event_id
                     patient_alert = PatientAlert(
                         patient_id=patient.id,
-                        event_id=event.event_id,
+                        event_id=str(breach.id),   # same value as breach table primary key
                         case=rule["case"],
                         alert_type="geofence",
                         title=rule.get("reason", "Geofence breach"),
@@ -115,11 +123,10 @@ def run_geofence_check_for_all_patients():
                     )
                     db.add(patient_alert)
                     db.flush()
-                    
-                    # Create budii alert relationships for all caregivers and family members
                     create_budii_alert_relationships(db, patient_alert.id, patient.id)
-                    
-                    db.commit()
+
+                    db.commit()                 
+           
                     logger.info(f"[GEOFENCE_SCHEDULER] Created geofence breach alert for patient {patient.id}")
     
     except Exception as e:

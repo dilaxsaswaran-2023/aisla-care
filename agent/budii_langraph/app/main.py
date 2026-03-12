@@ -41,23 +41,6 @@ def startup_event():
     init_db()
 
 
-# @app.post("/events")
-# def receive_event(event: IncomingEvent):
-    # logger.info(f"[MAIN] Received event={event.event_id}")
-
-    # result_state = graph.invoke({"event": event})
-
-    # return {
-    #     "event_id": event.event_id,
-    #     "patient_id": event.patient_id,
-    #     "result": result_state.get("final_result", {
-    #         "triggered": False,
-    #         "rules_triggered": []
-    #     }),
-    #     "actions": result_state.get("actions", [])
-    # }
-import requests
-
 @app.post("/events")
 def receive_event(event: IncomingEvent):
     logger.info(f"[MAIN] Received event={event.event_id}")
