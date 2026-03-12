@@ -82,6 +82,29 @@ def list_relationships(
                 }],
             })
 
+    elif role == "family":
+        from app.models.relationship import Relationship as RelModel
+        fam_rels = (
+            db.query(RelModel)
+            .filter(
+                RelModel.related_user_id == uuid.UUID(user_id),
+                RelModel.relationship_type == "family",
+            )
+            .all()
+        )
+        for rel in fam_rels:
+            pt = db.query(User).filter(User.id == rel.patient_id).first()
+            if not pt:
+                continue
+            cg = db.query(User).filter(User.id == pt.caregiver_id).first() if pt.caregiver_id else None
+            relationships.append({
+                "caregiver": {"_id": str(cg.id), "full_name": cg.full_name, "email": cg.email} if cg else {},
+                "patients": [{
+                    "patient": {"_id": str(pt.id), "full_name": pt.full_name, "email": pt.email},
+                    "family_members": [],
+                }],
+            })
+
     return relationships
 
 

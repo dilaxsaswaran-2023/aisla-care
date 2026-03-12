@@ -3,9 +3,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { MapPin, Clock, Navigation, ExternalLink } from 'lucide-react';
+import { MapPin, Clock, Navigation, Map as MapIcon } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 
 interface PatientLocationModalProps {
   open: boolean;
@@ -17,15 +19,118 @@ interface PatientLocationModalProps {
 interface LocationData {
   id: string;
   patient_id: string;
-  latitude: number;
-  longitude: number;
-  accuracy: number;
+  latitude?: number;
+  longitude?: number;
+  lat?: number;
+  lng?: number;
+  accuracy?: any;
   captured_at: string;
 }
 
 interface CurrentLocation extends LocationData {
   updated_at: string;
 }
+
+const getLat = (loc: any) => {
+  if (!loc) return undefined;
+  return typeof loc.latitude === 'number' ? loc.latitude : (typeof loc.lat === 'number' ? loc.lat : undefined);
+};
+
+const getLng = (loc: any) => {
+  if (!loc) return undefined;
+  return typeof loc.longitude === 'number' ? loc.longitude : (typeof loc.lng === 'number' ? loc.lng : undefined);
+};
+
+const getAccuracyValue = (loc: any) => {
+  if (!loc) return undefined;
+  if (loc.accuracy && typeof loc.accuracy === 'object') {
+    return typeof loc.accuracy.parsedValue === 'number' ? loc.accuracy.parsedValue : (typeof loc.accuracy.value === 'number' ? loc.accuracy.value : undefined);
+  }
+  return typeof loc.accuracy === 'number' ? loc.accuracy : undefined;
+};
+
+// Normalize API responses into an array of LocationData
+const normalizeRecent = (input: any): LocationData[] => {
+  if (!input) return [];
+  if (Array.isArray(input)) return input as LocationData[];
+  if (input.data && Array.isArray(input.data)) return input.data as LocationData[];
+  if (input.results && Array.isArray(input.results)) return input.results as LocationData[];
+  if (input.locations && Array.isArray(input.locations)) return input.locations as LocationData[];
+  if (typeof input === 'object') {
+    // treat objects with numeric keys or maps
+    const vals = (Object.values(input) as any[]).filter((v: any) => v && (typeof v.latitude === 'number' || typeof v.lat === 'number' || (v.latitude === undefined && v.lat === undefined && v.captured_at)));
+    if (vals.length) return vals as LocationData[];
+  }
+  return [];
+};
+
+// Map component for displaying locations
+const LocationMap = ({ currentLocation, recentLocations, patientName }: { currentLocation: CurrentLocation | null; recentLocations: LocationData[]; patientName: string }) => {
+  useEffect(() => {
+    if (!currentLocation && recentLocations.length === 0) return;
+
+    const mapContainer = document.getElementById('location-map');
+    if (!mapContainer) return;
+
+    // Get center coordinates
+    const centerLat = currentLocation ? getLat(currentLocation) : (recentLocations.length > 0 ? getLat(recentLocations[0]) : 0);
+    const centerLng = currentLocation ? getLng(currentLocation) : (recentLocations.length > 0 ? getLng(recentLocations[0]) : 0);
+
+    if (!centerLat || !centerLng) return;
+
+    // Initialize map
+    const map = L.map('location-map').setView([centerLat, centerLng], 13);
+
+    // Add tile layer
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors',
+      maxZoom: 19,
+    }).addTo(map);
+
+    // Create custom icons
+    const createCustomIcon = (color: string) => {
+      return L.divIcon({
+        html: `<div style="background-color: ${color}; width: 30px; height: 30px; border-radius: 50%; border: 3px solid white; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">
+          <div style="width: 8px; height: 8px; background-color: white; border-radius: 50%;"></div>
+        </div>`,
+        className: 'custom-marker',
+        iconSize: [30, 30],
+        iconAnchor: [15, 15],
+        popupAnchor: [0, -15],
+      });
+    };
+
+    // Add current location marker
+    if (currentLocation) {
+      const lat = getLat(currentLocation);
+      const lng = getLng(currentLocation);
+      if (lat && lng) {
+        L.marker([lat, lng], { icon: createCustomIcon('#3B82F6') })
+          .bindPopup(`<strong>Current Location</strong><br>${patientName}<br>Updated: ${new Date(currentLocation.updated_at).toLocaleString()}`)
+          .addTo(map);
+      }
+    }
+
+    // Add recent locations markers
+    if (Array.isArray(recentLocations)) {
+      recentLocations.forEach((location, index) => {
+        const lat = getLat(location);
+        const lng = getLng(location);
+        if (lat && lng) {
+          L.marker([lat, lng], { icon: createCustomIcon('#EF4444') })
+            .bindPopup(`<strong>Recent Location #${index + 1}</strong><br>Captured: ${new Date(location.captured_at).toLocaleString()}`)
+            .addTo(map);
+        }
+      });
+    }
+
+    return () => {
+      map.remove();
+    };
+  }, [currentLocation, recentLocations, patientName]);
+
+  return <div id="location-map" style={{ width: '100%', height: '400px', borderRadius: '8px' }} />;
+};
 
 export const PatientLocationModal = ({
   open,
@@ -37,6 +142,7 @@ export const PatientLocationModal = ({
   const [currentLocation, setCurrentLocation] = useState<CurrentLocation | null>(null);
   const [recentLocations, setRecentLocations] = useState<LocationData[]>([]);
   const [loading, setLoading] = useState(false);
+  const [showMapModal, setShowMapModal] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -56,8 +162,8 @@ export const PatientLocationModal = ({
       // Load recent locations
       const recentData = await api.get(
         `/gps/patient/${patientId}/recent`
-      ) as LocationData[];
-      setRecentLocations(recentData || []);
+      ) as any;
+      setRecentLocations(normalizeRecent(recentData));
     } catch (error: any) {
       toast({
         title: 'Error',
@@ -77,24 +183,14 @@ export const PatientLocationModal = ({
     }
   };
 
-  const getGoogleMapsUrl = (lat: number, lng: number) => {
-    return `https://www.google.com/maps?q=${lat},${lng}`;
-  };
-
-  const getAccuracyColor = (accuracy?: number) => {
-    if (typeof accuracy !== 'number' || !isFinite(accuracy)) return 'bg-red-100 text-red-800';
-    if (accuracy < 10) return 'bg-green-100 text-green-800';
-    if (accuracy < 50) return 'bg-yellow-100 text-yellow-800';
-    return 'bg-red-100 text-red-800';
-  };
-
   const formatNumber = (value: number | undefined | null, decimals: number) => {
     if (typeof value === 'number' && isFinite(value)) return value.toFixed(decimals);
     return '—';
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -128,13 +224,13 @@ export const PatientLocationModal = ({
                     <div>
                       <p className="text-xs text-muted-foreground">Latitude</p>
                       <p className="text-sm font-monospace font-semibold">
-                        {formatNumber(currentLocation.latitude, 6)}
+                        {formatNumber(getLat(currentLocation), 6)}
                       </p>
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">Longitude</p>
                       <p className="text-sm font-monospace font-semibold">
-                        {formatNumber(currentLocation.longitude, 6)}
+                        {formatNumber(getLng(currentLocation), 6)}
                       </p>
                     </div>
                   </div>
@@ -143,11 +239,19 @@ export const PatientLocationModal = ({
                     <div>
                       <p className="text-xs text-muted-foreground">Accuracy</p>
                       <Badge
-                        className={`text-xs mt-1 ${getAccuracyColor(currentLocation.accuracy)}`}
+                        className={`text-xs mt-1 ${
+                          typeof getAccuracyValue(currentLocation) === 'number' && isFinite(getAccuracyValue(currentLocation)!)
+                            ? getAccuracyValue(currentLocation)! < 10
+                              ? 'bg-green-100 text-green-800'
+                              : getAccuracyValue(currentLocation)! < 50
+                                ? 'bg-yellow-100 text-yellow-800'
+                                : 'bg-red-100 text-red-800'
+                            : 'bg-red-100 text-red-800'
+                        }`}
                         variant="secondary"
                       >
-                        {typeof currentLocation.accuracy === 'number' && isFinite(currentLocation.accuracy)
-                          ? `±${currentLocation.accuracy.toFixed(2)}m`
+                        {typeof getAccuracyValue(currentLocation) === 'number' && isFinite(getAccuracyValue(currentLocation)!)
+                          ? `±${getAccuracyValue(currentLocation)!.toFixed(2)}m`
                           : 'Accuracy N/A'}
                       </Badge>
                     </div>
@@ -163,18 +267,10 @@ export const PatientLocationModal = ({
                     variant="outline"
                     size="sm"
                     className="w-full gap-2 text-xs"
-                    onClick={() => {
-                      const lat = currentLocation.latitude;
-                      const lng = currentLocation.longitude;
-                      if (typeof lat === 'number' && typeof lng === 'number' && isFinite(lat) && isFinite(lng)) {
-                        window.open(getGoogleMapsUrl(lat, lng), '_blank');
-                      } else {
-                        toast({ title: 'No coordinates', description: 'Latitude/Longitude unavailable' });
-                      }
-                    }}
+                    onClick={() => setShowMapModal(true)}
                   >
-                    <ExternalLink className="w-3 h-3" />
-                    View on Google Maps
+                    <MapIcon className="w-3 h-3" />
+                    View on Map
                   </Button>
                 </CardContent>
               </Card>
@@ -210,11 +306,19 @@ export const PatientLocationModal = ({
                                 {formatTime(location.captured_at)}
                               </time>
                               <Badge
-                                className={`text-[10px] ${getAccuracyColor(location.accuracy)}`}
+                                className={`text-[10px] ${
+                                  typeof getAccuracyValue(location) === 'number' && isFinite(getAccuracyValue(location)!)
+                                    ? getAccuracyValue(location)! < 10
+                                      ? 'bg-green-100 text-green-800'
+                                      : getAccuracyValue(location)! < 50
+                                        ? 'bg-yellow-100 text-yellow-800'
+                                        : 'bg-red-100 text-red-800'
+                                    : 'bg-red-100 text-red-800'
+                                }`}
                                 variant="secondary"
                               >
-                                {typeof location.accuracy === 'number' && isFinite(location.accuracy)
-                                  ? `±${location.accuracy.toFixed(2)}m`
+                                {typeof getAccuracyValue(location) === 'number' && isFinite(getAccuracyValue(location)!)
+                                  ? `±${getAccuracyValue(location)!.toFixed(2)}m`
                                   : 'Accuracy N/A'}
                               </Badge>
                             </div>
@@ -222,33 +326,17 @@ export const PatientLocationModal = ({
                               <div>
                                 <span className="text-muted-foreground">Lat: </span>
                                 <span className="font-mono font-semibold">
-                                  {formatNumber(location.latitude, 6)}
+                                  {formatNumber(getLat(location), 6)}
                                 </span>
                               </div>
                               <div>
                                 <span className="text-muted-foreground">Lng: </span>
                                 <span className="font-mono font-semibold">
-                                  {formatNumber(location.longitude, 6)}
+                                  {formatNumber(getLng(location), 6)}
                                 </span>
                               </div>
                             </div>
                           </div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 w-6 p-0"
-                            onClick={() => {
-                              const lat = location.latitude;
-                              const lng = location.longitude;
-                              if (typeof lat === 'number' && typeof lng === 'number' && isFinite(lat) && isFinite(lng)) {
-                                window.open(getGoogleMapsUrl(lat, lng), '_blank');
-                              } else {
-                                toast({ title: 'No coordinates', description: 'Latitude/Longitude unavailable' });
-                              }
-                            }}
-                          >
-                            <ExternalLink className="w-3 h-3" />
-                          </Button>
                         </div>
                       </div>
                     ))}
@@ -270,5 +358,51 @@ export const PatientLocationModal = ({
         )}
       </DialogContent>
     </Dialog>
+
+    {/* Map Modal */}
+    <Dialog open={showMapModal} onOpenChange={setShowMapModal}>
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <MapIcon className="w-5 h-5" />
+            Location Map: {patientName}
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="flex gap-4 text-xs">
+            <div className="flex items-center gap-2">
+              <div
+                style={{
+                  width: '20px',
+                  height: '20px',
+                  backgroundColor: '#3B82F6',
+                  borderRadius: '50%',
+                }}
+              />
+              <span>Current Location</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div
+                style={{
+                  width: '20px',
+                  height: '20px',
+                  backgroundColor: '#EF4444',
+                  borderRadius: '50%',
+                }}
+              />
+              <span>Recent Locations</span>
+            </div>
+          </div>
+
+          <LocationMap currentLocation={currentLocation} recentLocations={recentLocations} patientName={patientName} />
+
+          <Button variant="outline" className="w-full" onClick={() => setShowMapModal(false)}>
+            Close Map
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 };

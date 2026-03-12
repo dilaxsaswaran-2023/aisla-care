@@ -436,7 +436,7 @@ export const UserManagement = () => {
             <TableRow className={`bg-muted/30 ${isMobile ? '[&>th]:px-2 [&>th]:py-2' : ''}`}>
               <TableHead className={isMobile ? 'w-5/12 px-2' : ''}>Name</TableHead>
               <TableHead className={`relative ${isMobile ? 'w-2/12 px-2' : ''}`}>
-                <div className={`flex items-center gap-2 ${isMobile ? 'gap-0' : ''}`}>
+                <div className={`flex items-center ${isMobile ? 'gap-0' : ''}`}>
                     <span className={isMobile ? 'text-xs' : ''}>Role</span>
                     <button
                     onClick={(e) => {
@@ -464,7 +464,7 @@ export const UserManagement = () => {
                 </div>
               </TableHead>
               <TableHead className={`relative ${isMobile ? 'w-2/12 px-2' : ''}`}>
-                <div className={`flex items-center gap-2 ${isMobile ? 'gap-0' : ''}`}>
+                <div className={`flex items-center ${isMobile ? 'gap-0' : ''}`}>
                   <span className={isMobile ? 'text-xs' : ''}>Status</span>
                   <button
                     onClick={(e) => {
@@ -491,14 +491,16 @@ export const UserManagement = () => {
                   )}
                 </div>
               </TableHead>
-              <TableHead className={`${isMobile ? 'w-2/12 px-2' : ''}`}>Contact</TableHead>
+              {!isMobile && (
+                <TableHead className={`${isMobile ? 'w-2/12 px-2' : ''}`}>Contact</TableHead>
+              )}
               <TableHead className={`${isMobile ? 'w-3/12 px-2 text-right' : 'text-right'}`}>Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filteredUsers.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={4} className="text-center py-8">
+                <TableCell colSpan={isMobile ? 3 : 4} className="text-center py-8">
                   <p className="text-sm text-muted-foreground">No users found. {users.length > 0 ? 'Try adjusting your filters.' : 'Create users to get started.'}</p>
                 </TableCell>
               </TableRow>
@@ -552,13 +554,15 @@ export const UserManagement = () => {
                       </Badge>
                     </button>
                   </TableCell>
-                  <TableCell className={`${isMobile ? 'px-2 w-2/12' : ''}`}>
-                    {u.phone_country || u.phone_number ? (
-                      <span className="text-sm">{`${u.phone_country ? '+' + u.phone_country : ''} ${u.phone_number || ''}`.trim()}</span>
-                    ) : (
-                      <span className="text-sm text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
+                  {!isMobile && (
+                    <TableCell className={`${isMobile ? 'px-2 w-2/12' : ''}`}>
+                      {u.phone_country || u.phone_number ? (
+                        <span className="text-sm">{`${u.phone_country ? '+' + u.phone_country : ''} ${u.phone_number || ''}`.trim()}</span>
+                      ) : (
+                        <span className="text-sm text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                  )}
                 <TableCell className={isMobile ? 'px-0 w-3/12' : 'text-right'} onClick={(e) => e.stopPropagation()}>
                   <div className={`w-full flex ${isMobile ? 'justify-end gap-0.5 px-2 py-1.5' : 'justify-end gap-1'}`}>
                     <Button variant="ghost" size="sm" onClick={() => handleEditClick(u)} title="Edit user" className={isMobile ? 'p-1 h-auto' : ''}>
