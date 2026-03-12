@@ -39,13 +39,14 @@ def _case_to_priority(case: str) -> str:
 
 async def process_event(event: MonitorEvent, db: Session, sio=None) -> list:
     """
-    Run all enabled monitor checks against the incoming event.
-
-    For each triggered rule:
-    - Always persists a PatientAlert (audit / event log).
-    - For non-SOS rules, also creates a main Alert record (frontend-visible)
-      and the associated alert_relationships.
-    - Emits a new_alert socket event when any rule fires.
+    ⚠️  DEPRECATED - No longer used in the main application flow.
+    
+    This function was the main event processor before we refactored to independent checks:
+    - SOS checks are now triggered directly via check_sos_direct() in /api/alerts/sos endpoint
+    - Geofence checks run independently via geofence_scheduler every 60 seconds
+    
+    Keeping for backward compatibility with external integrations or testing.
+    All new monitoring should use the independent check functions directly.
     """
     print(f"[MONITOR] process_event called with patient_id={event.patient_id}, event_id={event.event_id}")
     settings = get_settings()

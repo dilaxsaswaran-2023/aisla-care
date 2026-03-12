@@ -11,6 +11,7 @@ from app.config import get_settings
 from app.database import engine, Base, SessionLocal
 from app.jwt_utils import init_jwt_secret
 from app.seeder import seed_super_admin
+from app.services.geofence_scheduler import start_scheduler, stop_scheduler
 
 # Route imports
 from app.routes.auth import router as auth_router
@@ -59,12 +60,17 @@ async def lifespan(app: FastAPI):
         finally:
             db.close()
         print("[OK] JWT secret and super-admin initialized")
+        
+        # Start background geofence scheduler
+        start_scheduler()
+        print("[OK] Geofence scheduler started")
     except Exception as e:
         print(f"[WARN] Database initialization error: {type(e).__name__}: {e}")
 
     yield  # Application is running
 
     # ── Shutdown ─────────────────────────────────────────────────────────────
+    stop_scheduler()
     print("[OK] Application shutting down")
 
 

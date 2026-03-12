@@ -1,7 +1,10 @@
 import uuid
-from fastapi import APIRouter, Depends, HTTPException
+import logging
+from datetime import datetime, timezone
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from sqlalchemy import desc
 
 from app.database import get_db
 from app.models.alert import Alert
@@ -9,12 +12,70 @@ from app.models.alert_relationship import AlertRelationship
 from app.models.audit_log import AuditLog
 from app.models.gps_location import GpsLocation
 from app.models.user import User
-from fastapi import APIRouter, Depends, HTTPException, Request
 from app.auth import get_current_user
 from app.services.alert_relationship_service import create_alert_relationships
-from app.services.monitor import MonitorEvent, process_event
 
+logger = logging.getLogger("alerts.router")
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
+
+
+# ── SOS Check Helper ─────────────────────────────────────────────────────────
+def check_sos_direct(alert: Alert, db: Session, patient_id: uuid.UUID) -> list:
+    """
+    Check if the SOS is a repeat within 8 minutes or a new trigger.
+    Returns a rule dict if SOS is detected, empty list otherwise.
+    """
+    if alert.alert_type != "sos":
+        return []
+    
+    current_time = alert.created_at
+    if current_time.tzinfo is not None:
+        current_time = current_time.astimezone(timezone.utc).replace(tzinfo=None)
+    
+    # Get the most recent previous SOS alert, excluding the current one
+    last_sos = (
+        db.query(Alert)
+        .filter(
+            Alert.patient_id == patient_id,
+            Alert.alert_type == "sos",
+            Alert.id != alert.id,
+        )
+        .order_by(desc(Alert.created_at))
+        .first()
+    )
+    
+    if not last_sos:
+        logger.info(f"[SOS] No previous SOS for patient {patient_id} - SOS_TRIGGER")
+        return [{
+            "triggered": True,
+            "case": "SOS_TRIGGER",
+            "action": "SEND_CONFIRMATION",
+            "reason": "SOS triggered",
+        }]
+    
+    last_time = last_sos.created_at
+    if last_time.tzinfo is not None:
+        last_time = last_time.astimezone(timezone.utc).replace(tzinfo=None)
+    
+    diff = int((current_time - last_time).total_seconds())
+    logger.info(f"[SOS] Seconds since last SOS: {diff}")
+    
+    if diff <= 480:  # 8 minutes
+        logger.warning(f"[SOS] SOS_REPEAT detected for patient {patient_id} within 8 minutes")
+        return [{
+            "triggered": True,
+            "case": "SOS_REPEAT",
+            "action": "START_EMERGENCY",
+            "reason": "Repeated SOS within 8 minutes",
+        }]
+    
+    logger.info(f"[SOS] SOS_TRIGGER for patient {patient_id} - more than 8 minutes since last")
+    return [{
+        "triggered": True,
+        "case": "SOS_TRIGGER",
+        "action": "SEND_CONFIRMATION",
+        "reason": "SOS triggered",
+    }]
 
 
 # Request models
@@ -193,21 +254,25 @@ async def sos_alert(
     # Create alert relationships for all caregivers and family members
     relationships = create_alert_relationships(db, alert.id, user_id)
 
-    # Trigger backend monitor service in-process (SOS check + any other enabled checks)
+    # Run SOS check to determine if it's SOS_TRIGGER or SOS_REPEAT
+    sos_rules = check_sos_direct(alert, db, user_id)
+    
+    # Emit socket event if available
     sio = getattr(request.app.state, "sio", None)
-    sos_event = MonitorEvent(
-        event_id=str(alert.id),
-        patient_id=str(user_id),
-        timestamp=alert.created_at.isoformat(),
-        sos_triggered=True,
-        sos_triggered_time=alert.created_at.isoformat(),
-        lat=alert.latitude,
-        lng=alert.longitude,
-    )
-    await process_event(sos_event, db, sio)
+    if sio and sos_rules:
+        try:
+            await sio.emit("new_alert", {
+                "patient_id": str(user_id),
+                "alert_id": str(alert.id),
+                "alert_type": "sos",
+                "sos_rules": sos_rules,
+            })
+        except Exception as exc:
+            logger.warning(f"[SOS] socket emit failed: {exc}")
 
     # Build response with alert and relationships
     response = alert.to_dict()
     response["relationships"] = relationships
+    response["sos_result"] = sos_rules[0] if sos_rules else None
     
     return response

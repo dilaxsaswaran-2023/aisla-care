@@ -1,4 +1,6 @@
-from app.services.monitor.service import process_event
 from app.services.monitor.schemas import MonitorEvent, RuleResult
 
-__all__ = ["process_event", "MonitorEvent", "RuleResult"]
+# Deprecated: process_event is no longer used
+# SOS checks are now triggered directly via /api/alerts/sos
+# Geofence checks run independently via the background scheduler
+__all__ = ["MonitorEvent", "RuleResult"]
