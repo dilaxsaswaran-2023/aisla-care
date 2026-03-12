@@ -199,7 +199,15 @@ async def call_end(sid, data):
     await sio.emit("call-ended", data, room=data.get("to"))
 
 # ── FastAPI app ──────────────────────────────────────────────────────────────
-app = FastAPI(title="AISLA Care Backend", lifespan=lifespan)
+app = FastAPI(
+    title="AISLA Care Backend API",
+    description="Patient monitoring and caregiver coordination platform with real-time alerts.",
+    version="1.0.0",
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+    openapi_url="/api/openapi.json",
+    lifespan=lifespan,
+)
 app.state.sio = sio
 
 # CORS
