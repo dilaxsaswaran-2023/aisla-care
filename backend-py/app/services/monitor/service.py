@@ -8,6 +8,7 @@ from app.models.alert import Alert
 from app.models.budii_alert import PatientAlert
 from app.services.alert_relationship_service import create_alert_relationships
 from app.services.budii_alert_relationship_service import create_budii_alert_relationships
+from app.services.firebase_helper import push_patient_alert
 from app.services.monitor.schemas import MonitorEvent
 from app.services.monitor.checks.check_sos import check_sos
 from app.services.monitor.checks.check_geofence import check_geofence
@@ -92,6 +93,9 @@ async def process_event(event: MonitorEvent, db: Session, sio=None) -> list:
             print(f"[MONITOR] About to create_budii_alert_relationships for patient_alert.id={patient_alert.id}, patient_uuid={patient_uuid}")
             result = create_budii_alert_relationships(db, patient_alert.id, patient_uuid)
             print(f"[MONITOR] create_budii_alert_relationships returned: {result}")
+
+            # Push to Firebase for real-time frontend listeners
+            push_patient_alert(patient_alert.to_dict())
 
         # ── For non-SOS rules, create a user-visible Alert + relationships ────
         # (SOS alert is already created by the /api/alerts/sos endpoint)

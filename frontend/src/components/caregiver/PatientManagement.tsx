@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -9,7 +10,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { UserPlus, MessageSquare, Phone, MapPin, Activity, ChevronDown, Settings } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import GeofenceSettingsDialog from './GeofenceSettingsDialog';
-import { PatientLocationModal } from './PatientLocationModal';
 import { useAuth } from '@/contexts/AuthContext';
 import ChatInterface from '@/components/chat/ChatInterface';
 import { Switch } from '@/components/ui/switch';
@@ -41,14 +41,13 @@ const samplePatients: Patient[] = [
 export const PatientManagement = ({ isMobile }: { isMobile?: boolean }) => {
   const { toast } = useToast();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [open, setOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [geofenceDialogOpen, setGeofenceDialogOpen] = useState(false);
   const [geofencePatient, setGeofencePatient] = useState<Patient | null>(null);
-  const [locationModalOpen, setLocationModalOpen] = useState(false);
-  const [locationPatient, setLocationPatient] = useState<Patient | null>(null);
   const [geofenceLoading, setGeofenceLoading] = useState(false);
   const [geofenceForm, setGeofenceForm] = useState({
     is_geofencing: false,
@@ -462,8 +461,7 @@ export const PatientManagement = ({ isMobile }: { isMobile?: boolean }) => {
                     className={`gap-1.5 h-8 ${isMobile ? "p-2" : ""}`}
                     title="Location"
                     onClick={() => {
-                      setLocationPatient(patient);
-                      setLocationModalOpen(true);
+                      navigate('?tab=map');
                     }}
                   >
                     <MapPin className="w-3.5 h-3.5" />
@@ -498,15 +496,6 @@ export const PatientManagement = ({ isMobile }: { isMobile?: boolean }) => {
         onSave={handleSaveGeofence}
         onClose={() => setGeofenceDialogOpen(false)}
       />
-
-      {locationPatient && (
-        <PatientLocationModal
-          open={locationModalOpen}
-          onOpenChange={setLocationModalOpen}
-          patientId={locationPatient.id}
-          patientName={locationPatient.full_name}
-        />
-      )}
     </>
   );
 };

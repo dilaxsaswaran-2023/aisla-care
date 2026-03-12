@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Column, String, Float, DateTime, Enum, ForeignKey
+from sqlalchemy import Boolean, Column, String, Float, DateTime, Enum, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 
 from app.database import Base
@@ -23,6 +23,8 @@ class Alert(Base):
     voice_transcription = Column(String, nullable=True)
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)
+    is_read = Column(Boolean, nullable=False, default=False, server_default="false")
+    is_added_to_emergency = Column(Boolean, nullable=False, default=False, server_default="false")
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -39,6 +41,8 @@ class Alert(Base):
             "voice_transcription": self.voice_transcription,
             "latitude": self.latitude,
             "longitude": self.longitude,
+            "is_read": self.is_read,
+            "is_added_to_emergency": self.is_added_to_emergency,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }

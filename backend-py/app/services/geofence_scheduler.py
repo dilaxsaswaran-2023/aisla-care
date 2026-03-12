@@ -19,6 +19,7 @@ from app.services.budii_alert_relationship_service import create_budii_alert_rel
 from app.services.alert_relationship_service import create_alert_relationships
 from app.models.alert import Alert
 from app.models.geofence_breach_event import GeofenceBreachEvent
+from app.services.firebase_helper import push_patient_alert
 
 logger = logging.getLogger("geofence.scheduler")
 
@@ -97,6 +98,7 @@ def run_geofence_check_for_all_patients():
                         message=rule.get("reason", "Patient outside home boundary"),
                         latitude=location.lat,
                         longitude=location.lng,
+                        is_added_to_emergency=True,
                     )
                     db.add(alert)
                     db.flush()
@@ -112,12 +114,21 @@ def run_geofence_check_for_all_patients():
                         message=rule.get("reason", ""),
                         status="active",
                         source="scheduler",
+                        is_added_to_emergency=True,
                     )
                     db.add(patient_alert)
                     db.flush()
                     create_budii_alert_relationships(db, patient_alert.id, patient.id)
 
                     db.commit()
+                    db.refresh(patient_alert)
+
+                    # Push to Firebase for real-time frontend listeners
+                    pa_dict = patient_alert.to_dict()
+                    patient_user = db.query(User).filter(User.id == patient.id).first()
+                    pa_dict["patient_name"] = patient_user.full_name if patient_user else "Unknown"
+                    push_patient_alert(pa_dict)
+
                     logger.info(f"[GEOFENCE_SCHEDULER] Created geofence breach alert for patient {patient.id}")
     
     except Exception:

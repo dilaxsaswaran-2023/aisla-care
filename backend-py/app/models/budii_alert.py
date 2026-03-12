@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Column, String, DateTime, ForeignKey, Text
+from sqlalchemy import Boolean, Column, String, DateTime, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import UUID
 
 from app.database import Base
@@ -20,6 +20,7 @@ class PatientAlert(Base):
     message = Column(Text, nullable=True)
     status = Column(String, nullable=False, default="active")
     source = Column(String, nullable=False, default="budii")
+    is_read = Column(Boolean, nullable=False, default=False, server_default="false")
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
@@ -35,6 +36,7 @@ class PatientAlert(Base):
             "message": self.message,
             "status": self.status,
             "source": self.source,
+            "is_read": self.is_read,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }

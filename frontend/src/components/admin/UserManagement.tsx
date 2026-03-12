@@ -16,17 +16,28 @@ import { UserDetailsDialog } from './components/UserDetailsDialog';
 import { EditUserDialog } from './components/EditUserDialog';
 
 interface User {
-  id: string;
-  full_name: string;
-  email: string;
-  role: string;
-  status?: 'active' | 'disabled' | 'invited';
-  caregiver_id?: string;
-  family_ids?: string[];
-  phone_country?: string;
-  phone_number?: string;
-  caregiver_type?: string;
-  caregiver_subtype?: string;
+  id: string | null;
+  _id?: string | null;
+  email: string | null;
+  full_name: string | null;
+  role: string | null;
+  avatar_url?: string | null;
+  phone_country?: string | null;
+  phone_number?: string | null;
+  address?: string | null;
+  status?: 'active' | 'disabled' | 'invited' | null;
+  caregiver_type?: string | null;
+  caregiver_subtype?: string | null;
+  caregiver_id?: string | null;
+  corporate_id?: string | null;
+  family_ids?: string[] | null;
+  is_geofencing?: boolean | null;
+  location_boundary?: { latitude: number; longitude: number } | null;
+  boundary_radius?: number | null;
+  geofence_state?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  patient_id?: string | null;
 }
 
 interface DropdownUser {
@@ -52,8 +63,9 @@ const STATUS_OPTIONS = [
   { value: 'invited', label: 'Invited' },
 ];
 
-const roleBadge = (role: string) => {
-  return <Badge variant={(ROLE_VARIANT_MAP[role] || 'outline') as any} className="capitalize text-[11px]">{role}</Badge>;
+const roleBadge = (role: string | null) => {
+  const label = role || 'unknown';
+  return <Badge variant={(ROLE_VARIANT_MAP[label] || 'outline') as any} className="capitalize text-[11px]">{label}</Badge>;
 };
 
 export const UserManagement = () => {
@@ -130,18 +142,28 @@ export const UserManagement = () => {
       setUsers(
         data && Array.isArray(data) && data.length > 0
           ? data.map((u: any) => ({
-              id: u._id || u.id,
-              full_name: u.full_name,
-              email: u.email || '',
-              role: u.role,
-              status: u.status || 'active',
-              caregiver_id: u.caregiver_id,
-              family_ids: Array.isArray(u.family_ids) ? u.family_ids : [],
-              patient_id: u.patient_id,
-              phone_country: u.phone_country,
-              phone_number: u.phone_number,
-              caregiver_type: u.caregiver_type,
-              caregiver_subtype: u.caregiver_subtype,
+              id: u._id || u.id || null,
+              _id: u._id || null,
+              full_name: u.full_name || null,
+              email: u.email || null,
+              role: u.role || null,
+              status: u.status || null,
+              caregiver_id: u.caregiver_id || null,
+              family_ids: Array.isArray(u.family_ids) ? u.family_ids : null,
+              patient_id: u.patient_id || null,
+              phone_country: u.phone_country || null,
+              phone_number: u.phone_number || null,
+              caregiver_type: u.caregiver_type || null,
+              caregiver_subtype: u.caregiver_subtype || null,
+              avatar_url: u.avatar_url || null,
+              address: u.address || null,
+              corporate_id: u.corporate_id || null,
+              is_geofencing: typeof u.is_geofencing === 'boolean' ? u.is_geofencing : null,
+              location_boundary: u.location_boundary || null,
+              boundary_radius: u.boundary_radius ?? null,
+              geofence_state: u.geofence_state || null,
+              created_at: u.created_at || null,
+              updated_at: u.updated_at || null,
             }))
           : []
       );
@@ -375,7 +397,7 @@ export const UserManagement = () => {
   // Compute filtered users based on search and filters
   const filteredUsers = useMemo(() => {
     return users.filter(u => {
-      const matchesSearch = u.full_name.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesSearch = (u.full_name || '').toLowerCase().includes(searchQuery.toLowerCase());
       const matchesRole = roleFilter === 'all' || u.role === roleFilter;
       const matchesStatus = statusFilter === 'all' || u.status === statusFilter;
       return matchesSearch && matchesRole && matchesStatus;
@@ -518,19 +540,16 @@ export const UserManagement = () => {
                   <div className={`flex items-center ${isMobile ? 'gap-1.5' : 'gap-3'}`}>
                     <div className={`rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 ${isMobile ? 'w-6 h-6' : 'w-8 h-8'}`}>
                       <span className={`font-semibold text-primary ${isMobile ? 'text-[10px]' : 'text-xs'}`}>
-                        {u.full_name
-                          .split(' ')
-                          .map((n) => n[0])
-                          .join('')}
+                        {((u.full_name || 'Unknown').split(' ').map((n) => n[0]).join(''))}
                       </span>
                     </div>
-                    <span className={`font-medium ${isMobile ? 'text-[12px]' : 'text-sm'}`}>{u.full_name}</span>
+                    <span className={`font-medium ${isMobile ? 'text-[12px]' : 'text-sm'}`}>{u.full_name || '—'}</span>
                   </div>
                 </TableCell>
                 <TableCell className={`${isMobile ? 'px-2 w-2/12' : ''}`}>
                   {isMobile ? (
                     <Badge variant={(ROLE_VARIANT_MAP[u.role] || 'outline') as any} className={`${isMobile ? 'text-[10px] px-1.5 py-0.5' : 'text-[11px]'}`}>
-                      {u.role.charAt(0).toUpperCase()}
+                      {(u.role && u.role.length > 0) ? u.role.charAt(0).toUpperCase() : '?'}
                     </Badge>
                   ) : (
                     roleBadge(u.role)

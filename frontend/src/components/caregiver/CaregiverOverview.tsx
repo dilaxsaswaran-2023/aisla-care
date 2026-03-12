@@ -22,7 +22,8 @@ interface AlertItem {
 interface Contact { id: string; name: string; }
 
 function formatRelativeTime(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
+  const istOffset = 5.5 * 60 * 60 * 1000; // +5:30 hours in milliseconds
+  const diff = Date.now() - (new Date(iso).getTime() + istOffset);
   const mins = Math.floor(diff / 60000);
   if (mins < 1) return "Just now";
   if (mins < 60) return `${mins}m ago`;

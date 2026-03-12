@@ -15,6 +15,7 @@ import Family from "./pages/Family";
 import Patient from "./pages/Patient";
 import Admin from "./pages/Admin";
 import SuperAdmin from "./pages/SuperAdmin";
+import FirebaseTest from "./pages/FirebaseTest";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -60,6 +61,12 @@ const App = () => (
             <Route 
               path="/super-admin" 
               element={<ProtectedRoute element={<SuperAdmin />} requiredRole="super_admin" />} 
+            />
+            
+            {/* Firebase testing route */}
+            <Route 
+              path="/firebase-test" 
+              element={<AuthOnlyRoute element={<FirebaseTest />} />} 
             />
             
             {/* Catch-all for undefined routes */}

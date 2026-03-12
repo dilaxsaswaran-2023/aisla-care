@@ -3,6 +3,10 @@
 backend/.env
 frontend/.env
 
+# Firebase service-account credentials (never commit)
+firebase-service-account.json
+backend-py/firebase-service-account.json
+
 # Logs
 logs
 *.log

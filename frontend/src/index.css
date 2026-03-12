@@ -29,9 +29,9 @@
     --accent: 199 89% 95%;
     --accent-foreground: 199 89% 32%;
 
-    --destructive: 0 84% 60%;
+    --destructive: 0 85% 45%;
     --destructive-foreground: 0 0% 100%;
-    --sos-pulse: 0 84% 68%;
+    --sos-pulse: 0 85% 50%;
 
     --success: 152 60% 42%;
     --success-foreground: 0 0% 100%;
@@ -79,9 +79,9 @@
     --accent: 199 50% 18%;
     --accent-foreground: 199 80% 65%;
 
-    --destructive: 0 72% 55%;
+    --destructive: 0 72% 45%;
     --destructive-foreground: 210 15% 95%;
-    --sos-pulse: 0 72% 62%;
+    --sos-pulse: 0 72% 50%;
 
     --success: 152 55% 40%;
     --success-foreground: 210 15% 95%;

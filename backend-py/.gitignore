@@ -7,3 +7,6 @@ venv/
 *.egg-info/
 dist/
 build/
+
+# Firebase service-account credentials (never commit)
+firebase-service-account.json

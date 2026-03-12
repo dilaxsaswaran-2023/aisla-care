@@ -168,3 +168,53 @@ def update_budii_alert(
     db.commit()
     db.refresh(alert)
     return alert.to_dict()
+
+
+# PATCH /api/budii-alerts/mark-read/{alert_id}
+@router.patch("/mark-read/{alert_id}")
+def mark_budii_alert_read(
+    alert_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Mark a single patient alert as read.
+    """
+    try:
+        aid = uuid.UUID(alert_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid alert ID")
+    
+    alert = db.query(PatientAlert).filter(PatientAlert.id == aid).first()
+    if not alert:
+        raise HTTPException(status_code=404, detail="Patient alert not found")
+    
+    alert.is_read = True
+    db.add(alert)
+    db.commit()
+    return {"success": True}
+
+
+# PATCH /api/budii-alerts/mark-read-all
+@router.patch("/mark-read-all")
+def mark_all_budii_alerts_read(
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Mark all patient alerts linked to the current user as read.
+    """
+    user_id = uuid.UUID(current_user["userId"])
+    rel_ids = [
+        r.patient_alert_id for r in
+        db.query(BudiiAlertRelationship).filter(
+            (BudiiAlertRelationship.caregiver_id == user_id) |
+            (BudiiAlertRelationship.family_id == user_id)
+        ).all()
+    ]
+    if rel_ids:
+        db.query(PatientAlert).filter(PatientAlert.id.in_(rel_ids), PatientAlert.is_read == False).update(
+            {"is_read": True}, synchronize_session="fetch"
+        )
+    db.commit()
+    return {"success": True}

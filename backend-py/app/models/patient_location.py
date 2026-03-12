@@ -14,7 +14,7 @@ class PatientCurrentLocation(Base):
     lat = Column(Float, nullable=False)
     lng = Column(Float, nullable=False)
     accuracy = Column(Float, nullable=True)
-    captured_at = Column(DateTime, nullable=False)
+    captured_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     def to_dict(self):
@@ -37,7 +37,7 @@ class PatientLocationRecent(Base):
     lat = Column(Float, nullable=False)
     lng = Column(Float, nullable=False)
     accuracy = Column(Float, nullable=True)
-    captured_at = Column(DateTime, nullable=False)
+    captured_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Index for fast retrieval of last 10 records per patient
     __table_args__ = (

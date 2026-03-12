@@ -14,6 +14,9 @@ from app.models.gps_location import GpsLocation
 from app.models.user import User
 from app.auth import get_current_user
 from app.services.alert_relationship_service import create_alert_relationships
+from app.models.budii_alert import PatientAlert
+from app.services.budii_alert_relationship_service import create_budii_alert_relationships
+from app.services.firebase_helper import push_patient_alert
 
 logger = logging.getLogger("alerts.router")
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
@@ -116,8 +119,6 @@ def my_alerts(
         .all()
     )
 
-    print(f"Found {len(relationships)} alert relationships for user {user_id}")
-
     alert_ids = list({rel.alert_id for rel in relationships})
 
     if not alert_ids:
@@ -125,7 +126,7 @@ def my_alerts(
 
     alerts = (
         db.query(Alert)
-        .filter(Alert.id.in_(alert_ids))
+        .filter(Alert.id.in_(alert_ids), Alert.is_added_to_emergency != True)
         .order_by(Alert.created_at.desc())
         .limit(50)
         .all()
@@ -142,6 +143,24 @@ def my_alerts(
     return result
 
 
+# GET /api/alerts/:id
+@router.get("/{alert_id}")
+def get_alert(
+    alert_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        aid = uuid.UUID(alert_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid alert ID")
+    alert = db.query(Alert).filter(Alert.id == aid).first()
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    data = alert.to_dict()
+    patient = db.query(User).filter(User.id == alert.patient_id).first()
+    data["patient_name"] = patient.full_name if patient else "Unknown"
+    return data
 
 
 # POST /api/alerts
@@ -209,6 +228,56 @@ def update_alert(
     return alert.to_dict()
 
 
+# PATCH /api/alerts/mark-read/{alert_id}
+@router.patch("/mark-read/{alert_id}")
+def mark_alert_read(
+    alert_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Mark a single alert as read.
+    """
+    try:
+        aid = uuid.UUID(alert_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid alert ID")
+    
+    alert = db.query(Alert).filter(Alert.id == aid).first()
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    
+    alert.is_read = True
+    db.add(alert)
+    db.commit()
+    return {"success": True}
+
+
+# PATCH /api/alerts/mark-read-all
+@router.patch("/mark-read-all")
+def mark_all_alerts_read(
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Mark all alerts linked to the current user as read.
+    """
+    user_id = uuid.UUID(current_user["userId"])
+    rel_ids = [
+        r.alert_id for r in
+        db.query(AlertRelationship).filter(
+            (AlertRelationship.caregiver_id == user_id) |
+            (AlertRelationship.family_id == user_id)
+        ).all()
+    ]
+    if rel_ids:
+        db.query(Alert).filter(Alert.id.in_(rel_ids), Alert.is_read == False).update(
+            {"is_read": True}, synchronize_session="fetch"
+        )
+    db.commit()
+    return {"success": True}
+
+
 # POST /api/alerts/sos
 @router.post("/sos", status_code=201)
 async def sos_alert(
@@ -256,7 +325,35 @@ async def sos_alert(
 
     # Run SOS check to determine if it's SOS_TRIGGER or SOS_REPEAT
     sos_rules = check_sos_direct(alert, db, user_id)
-    
+
+    # If SOS_REPEAT → create PatientAlert, mark alert as emergency, push to Firebase
+    sos_case = sos_rules[0]["case"] if sos_rules else None
+    if sos_case == "SOS_REPEAT":
+        alert.is_added_to_emergency = True
+        db.add(alert)
+
+        patient_alert = PatientAlert(
+            patient_id=user_id,
+            event_id=str(alert.id),
+            case="SOS_REPEAT",
+            alert_type="sos",
+            title="Repeated SOS within 8 minutes",
+            message=sos_rules[0].get("reason", ""),
+            status="active",
+            source="monitor",
+        )
+        db.add(patient_alert)
+        db.flush()
+        create_budii_alert_relationships(db, patient_alert.id, user_id)
+        db.commit()
+        db.refresh(patient_alert)
+
+        # Push to Firebase
+        pa_dict = patient_alert.to_dict()
+        patient_user = db.query(User).filter(User.id == user_id).first()
+        pa_dict["patient_name"] = patient_user.full_name if patient_user else "Unknown"
+        push_patient_alert(pa_dict)
+
     # Emit socket event if available
     sio = getattr(request.app.state, "sio", None)
     if sio and sos_rules:

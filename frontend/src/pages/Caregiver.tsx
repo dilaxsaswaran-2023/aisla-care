@@ -1,10 +1,9 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useIsMobile } from "@/hooks/use-mobile";
 import {
-  MapPin, AlertCircle, Calendar, Activity, Bell, RefreshCw, Users, MessageSquare, CheckCircle
+  MapPin, AlertCircle, Calendar, Activity, RefreshCw, Users, MessageSquare
 } from "lucide-react";
 import PortalLayout from "@/components/layout/PortalLayout";
 import { api } from "@/lib/api";
@@ -15,6 +14,9 @@ import { CaregiverMessages } from "@/components/caregiver/CaregiverMessages";
 import { CaregiverLocation } from "@/components/caregiver/CaregiverLocation";
 import { CaregiverTasks } from "@/components/caregiver/CaregiverTasks";
 import { CaregiverAlerts } from "@/components/caregiver/CaregiverAlerts";
+import { NotificationDropdown } from "@/components/caregiver/NotificationDropdown";
+import { useFirebaseAlerts } from "@/hooks/useFirebaseAlerts";
+import { toast as sonnerToast } from "sonner";
 
 interface Contact { id: string; name: string; }
 interface FamilyContact { id: string; name: string; patientName: string; }
@@ -33,8 +35,11 @@ interface AlertItem {
   message: string;
   voice_transcription?: string;
   patient_name?: string;
+  event_id?: string;
   created_at: string;
   source?: string; // 'normal' or 'budii'
+  is_read?: boolean;
+  is_added_to_emergency?: boolean;
 }
 
 const navItems = [
@@ -45,98 +50,6 @@ const navItems = [
   { label: "Tasks", value: "tasks", icon: Calendar },
   { label: "Alerts", value: "alerts", icon: AlertCircle },
 ];
-
-// ─── Notification Dropdown ────────────────────────────────────────────────────
-const NotificationDropdown = ({ alerts, isMobile }: { alerts: AlertItem[]; isMobile: boolean }) => {
-  const [open, setOpen] = useState(false);
-  const unread = alerts.filter(a => a.status === "active").length;
-
-  const formatRelativeTime = (iso: string) => {
-    const diff = Date.now() - new Date(iso).getTime();
-    const mins = Math.floor(diff / 60000);
-    if (mins < 1) return "Just now";
-    if (mins < 60) return `${mins}m ago`;
-    const hrs = Math.floor(mins / 60);
-    if (hrs < 24) return `${hrs}h ago`;
-    return `${Math.floor(hrs / 24)}d ago`;
-  };
-
-  const getAlertStyle = (source?: string) => {
-    // Budii alerts always use red
-    if (source === 'budii') {
-      // stronger background for serious budii alerts
-      return { bg: "bg-destructive/10", icon: "text-destructive", itemBg: "bg-destructive/10", border: "border-destructive" };
-    }
-    // Normal alerts always use amber
-    return { bg: "bg-amber-500/10", icon: "text-amber-600", itemBg: "", border: "border-amber-500" };
-  };
-
-  return (
-    <div className="relative">
-      <Button
-        variant={isMobile ? "ghost" : "outline"}
-        size= {isMobile ? "icon" : "default"}
-        className="relative gap-1.5"
-        onClick={() => setOpen(v => !v)}
-        title="Notifications"
-      >
-        <Bell className="w-4 h-4" />
-        {!isMobile && <span className="hidden sm:inline text-xs">Notifications</span>}
-        {unread > 0 && (
-          <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold flex items-center justify-center px-1">
-            {unread > 9 ? "9+" : unread}
-          </span>
-        )}
-      </Button>
-
-      {open && (
-        <>
-          {/* Backdrop */}
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          {/* Dropdown */}
-          <div className="absolute right-0 top-10 z-50 w-80 rounded-xl border border-border bg-card shadow-xl overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-              <span className="text-sm font-semibold">Notifications</span>
-              {unread > 0 && (
-                <Badge variant="destructive" className="text-[10px] h-4 px-1.5">{unread} Active</Badge>
-              )}
-            </div>
-            <div className="max-h-80 overflow-y-auto divide-y divide-border">
-              {alerts.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-10 gap-2 text-muted-foreground">
-                  <CheckCircle className="w-7 h-7" />
-                  <p className="text-sm">All clear!</p>
-                </div>
-              ) : (
-                alerts.slice(0, 8).map(alert => {
-                  const s = getAlertStyle(alert.source);
-                  const isBudii = alert.source === 'budii';
-                  return (
-                    <div
-                      key={alert.id}
-                      className={`flex items-start gap-3 px-4 py-3 transition-colors ${isBudii ? s.itemBg + ' ' + s.border : ''} hover:bg-muted/40`}
-                    >
-                      <div className={`mt-0.5 w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${s.bg}`}>
-                        <AlertCircle className={`w-3.5 h-3.5 ${s.icon}`} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium truncate">{alert.patient_name ?? "Patient"} — {alert.title} {isBudii && <span className="text-destructive font-bold">●</span>}</p>
-                        <p className="text-[11px] text-muted-foreground mt-0.5">{formatRelativeTime(alert.created_at)}</p>
-                      </div>
-                      {alert.status === "active" && (
-                        <div className={`w-2 h-2 rounded-full ${isBudii ? 'bg-destructive' : 'bg-destructive'} shrink-0 mt-1.5`} />
-                      )}
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        </>
-      )}
-    </div>
-  );
-};
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 const Caregiver = () => {
@@ -210,6 +123,47 @@ const Caregiver = () => {
     if (activeTab === 'messages') loadConversations();
   }, [activeTab, loadConversations]);
 
+  // ── Firebase real-time alerts ──
+  const patientIds = useMemo(() => patients.map(p => p.id), [patients]);
+  const { latestAlert, clearLatest } = useFirebaseAlerts(patientIds);
+
+  useEffect(() => {
+    if (!latestAlert) return;
+    sonnerToast.error(
+      `🚨 ${latestAlert.patient_name ?? "Patient"} — ${latestAlert.title}`,
+      {
+        description: latestAlert.message,
+        duration: Infinity,
+        action: {
+          label: 'Close',
+          // dismiss the toast when clicked
+          onClick: () => sonnerToast.dismiss && sonnerToast.dismiss(),
+        },
+      }
+    );
+    loadAlerts();
+    clearLatest();
+  }, [latestAlert]);
+
+  const handleMarkAllRead = async () => {
+    try {
+      await Promise.all([
+        api.patch('/alerts/mark-read-all'),
+        api.patch('/budii-alerts/mark-read-all'),
+      ]);
+      setAlerts(prev => prev.map(a => ({ ...a, is_read: true })));
+      setBudiiAlerts(prev => prev.map(a => ({ ...a, is_read: true })));
+    } catch { /* non-critical */ }
+  };
+
+  const handleAlertRead = (alertId: string, source: string) => {
+    if (source === 'budii') {
+      setBudiiAlerts(prev => prev.map(a => a.id === alertId ? { ...a, is_read: true } : a));
+    } else {
+      setAlerts(prev => prev.map(a => a.id === alertId ? { ...a, is_read: true } : a));
+    }
+  };
+
   const onRefresh = () => { loadAlerts(); loadPatients(); };
 
   const pageTitles: Record<string, { title: string; desc: string }> = {
@@ -243,7 +197,7 @@ const Caregiver = () => {
             <RefreshCw className="w-4 h-4" />
             {!isMobile && <span className="hidden sm:inline text-xs">Refresh</span>}
           </Button>
-          <NotificationDropdown alerts={[...budiiAlerts, ...alerts]} isMobile={isMobile} />
+          <NotificationDropdown alerts={[...budiiAlerts, ...alerts]} isMobile={isMobile} onMarkAllRead={handleMarkAllRead} onAlertRead={handleAlertRead} />
         </div>
       }
     >
