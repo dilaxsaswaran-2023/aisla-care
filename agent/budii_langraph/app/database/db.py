@@ -171,6 +171,12 @@ def seed_medication_schedule(session):
             "scheduled_time": "09:00",
             "is_active": 1,
         },
+        {
+            "patient_id": "301f754a-5919-4523-b51c-e424fb10e96c",
+            "medicine_name": "Cholesterol Tablet",
+            "scheduled_time": "07:30",
+            "is_active": 1,
+        }
     ]
 
     for row in medication_rows:
@@ -201,6 +207,11 @@ def seed_active_hours(session):
             "active_start": "06:30",
             "active_end": "21:30",
         },
+        {
+            "patient_id": "301f754a-5919-4523-b51c-e424fb10e96c",
+            "active_start": "08:00",
+            "active_end": "20:00",
+        }
     ]
 
     for row in active_hours_rows:
