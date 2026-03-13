@@ -145,18 +145,18 @@ def start_scheduler():
         logger.info("[GEOFENCE_SCHEDULER] Scheduler already running")
         return
     
-    # Add job: run geofence check every 60 seconds
+    # Add job: run geofence check every 300 seconds
     scheduler.add_job(
         run_geofence_check_for_all_patients,
         "interval",
-        seconds=60,
+        seconds=300,
         id="geofence_check",
-        name="Geofence Check Every Minute",
+        name="Geofence Check Every 5 Minutes",
         replace_existing=True,
     )
     
     scheduler.start()
-    logger.info("[GEOFENCE_SCHEDULER] Started - runs every 60 seconds")
+    logger.info("[GEOFENCE_SCHEDULER] Started - runs every 300 seconds")
 
 
 def stop_scheduler():

@@ -17,9 +17,31 @@ const CompleteInvite = () => {
   const [phoneCountry, setPhoneCountry] = useState(user?.phone_country || '');
   const [phoneNumber, setPhoneNumber] = useState(user?.phone_number || '');
   const [address, setAddress] = useState('');
+  const [showPasswordField, setShowPasswordField] = useState(false);
+  const [errors, setErrors] = useState<{ fullName?: string; phoneNumber?: string }>({});
+
+  const validateForm = () => {
+    const newErrors: { fullName?: string; phoneNumber?: string } = {};
+    
+    if (!fullName.trim()) {
+      newErrors.fullName = 'Full name is required';
+    }
+    
+    if (!phoneNumber.trim()) {
+      newErrors.phoneNumber = 'Phone number is required';
+    }
+    
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!validateForm()) {
+      return;
+    }
+
     try {
       const payload: any = {
         new_password: newPassword,
@@ -55,13 +77,43 @@ const CompleteInvite = () => {
         <h2 className="text-xl font-bold mb-4">Complete your account</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <Label>Full Name</Label>
-            <Input value={fullName} onChange={(e) => setFullName(e.target.value)} />
+            <Label>Full Name <span className="text-red-500">*</span></Label>
+            <Input 
+              value={fullName} 
+              onChange={(e) => {
+                setFullName(e.target.value);
+                if (errors.fullName && e.target.value.trim()) {
+                  setErrors(prev => ({ ...prev, fullName: undefined }));
+                }
+              }}
+              className={errors.fullName ? 'border-red-500' : ''}
+            />
+            {errors.fullName && <p className="text-red-500 text-xs mt-1">{errors.fullName}</p>}
           </div>
+
           <div>
-            <Label>New Password</Label>
-            <Input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+            <div className="flex items-center justify-between mb-2">
+              <Label>Password</Label>
+              <Button
+                type="button"
+                variant="link"
+                size="sm"
+                onClick={() => setShowPasswordField(!showPasswordField)}
+                className="text-xs h-auto p-0"
+              >
+                {showPasswordField ? 'Cancel' : 'Change Password'}
+              </Button>
+            </div>
+            {showPasswordField && (
+              <Input 
+                type="password" 
+                value={newPassword} 
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="Enter new password"
+              />
+            )}
           </div>
+
           <div className="flex gap-2">
             <div className="w-40">
               <CountryCodePicker
@@ -72,10 +124,22 @@ const CompleteInvite = () => {
               />
             </div>
             <div className="flex-1">
-              <Label>Phone Number</Label>
-              <Input placeholder="Phone number" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} />
+              <Label>Phone Number <span className="text-red-500">*</span></Label>
+              <Input 
+                placeholder="Phone number" 
+                value={phoneNumber} 
+                onChange={(e) => {
+                  setPhoneNumber(e.target.value);
+                  if (errors.phoneNumber && e.target.value.trim()) {
+                    setErrors(prev => ({ ...prev, phoneNumber: undefined }));
+                  }
+                }}
+                className={errors.phoneNumber ? 'border-red-500' : ''}
+              />
+              {errors.phoneNumber && <p className="text-red-500 text-xs mt-1">{errors.phoneNumber}</p>}
             </div>
           </div>
+
           <div>
             <Label>Address</Label>
             <Input value={address} onChange={(e) => setAddress(e.target.value)} />
