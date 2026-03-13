@@ -13,6 +13,10 @@ from app.jwt_utils import init_jwt_secret
 from app.seeder import seed_super_admin
 from app.services.geofence_scheduler import start_scheduler, stop_scheduler
 
+# Initialize logging as early as possible
+from app.logging_config import setup_logging
+setup_logging()
+
 # Route imports
 from app.routes.auth import router as auth_router
 from app.routes.users import router as users_router
@@ -31,13 +35,8 @@ from app.routes.budii_alert import router as budii_alert_router
 from app.routes.monitor import router as monitor_router
 
 settings = get_settings()
-
 import logging
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s"
-)
+logger = logging.getLogger(__name__)
 
 # Track online users: {user_id: sid}
 _online_users: dict[str, str] = {}
@@ -50,7 +49,7 @@ async def lifespan(app: FastAPI):
     try:
         # Create all tables
         Base.metadata.create_all(bind=engine)
-        print("[OK] Database tables created")
+        logger.info("[DB] Database tables created")
 
         # Init JWT secret and seed super-admin
         db = SessionLocal()
@@ -59,19 +58,19 @@ async def lifespan(app: FastAPI):
             seed_super_admin(db)
         finally:
             db.close()
-        print("[OK] JWT secret and super-admin initialized")
+        logger.info("[DB] JWT secret and super-admin initialized")
         
         # Start background geofence scheduler
         start_scheduler()
-        print("[OK] Geofence scheduler started")
+        logger.info("[Scheduler] Geofence scheduler started")
     except Exception as e:
-        print(f"[WARN] Database initialization error: {type(e).__name__}: {e}")
+        logger.warning(f"[WARN] Database initialization error: {type(e).__name__}: {e}")
 
     yield  # Application is running
 
     # ── Shutdown ─────────────────────────────────────────────────────────────
     stop_scheduler()
-    print("[OK] Application shutting down")
+    logger.info("[OK] Application shutting down")
 
 
 # ── Socket.IO server ─────────────────────────────────────────────────────────
@@ -83,7 +82,7 @@ sio = socketio.AsyncServer(
 
 @sio.event
 async def connect(sid, environ):
-    print(f"[Socket] Client connected: {sid}")
+    logger.info(f"[Socket] Client connected: {sid}")
 
 
 @sio.event
@@ -93,7 +92,7 @@ async def disconnect(sid):
     if user_id:
         del _online_users[user_id]
         await sio.emit("user_offline", {"user_id": user_id})
-    print(f"[Socket] Client disconnected: {sid}")
+    logger.info(f"[Socket] Client disconnected: {sid}")
 
 
 @sio.event
@@ -102,7 +101,7 @@ async def join_room(sid, user_id: str):
     sio.enter_room(sid, user_id)
     _online_users[user_id] = sid
     await sio.emit("user_online", {"user_id": user_id})
-    print(f"[Socket/Chat] User {user_id} joined room (sid={sid})")
+    logger.info(f"[Socket/Chat] User {user_id} joined room (sid={sid})")
 
 
 @sio.event
@@ -138,7 +137,7 @@ async def send_message(sid, data: dict):
         )
         return msg_dict
     except Exception as exc:
-        print(f"[Socket/Chat] send_message error: {exc}")
+        logger.exception(f"[Socket/Chat] send_message error: {exc}")
         await sio.emit("message_error", {"error": str(exc)}, room=sid)
     finally:
         db.close()
