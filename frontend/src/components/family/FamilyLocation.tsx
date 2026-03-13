@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { MapPin, Clock, Navigation, RefreshCw } from "lucide-react";
+import { MapPin, Clock, Navigation, RefreshCw, Route, UserRound } from "lucide-react";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import L from "leaflet";
@@ -15,14 +15,21 @@ interface LocationData {
   longitude?: number;
   lat?: number;
   lng?: number;
-  accuracy?: any;
+  accuracy?: number;
   captured_at?: string;
   updated_at?: string;
 }
 
+interface PatientItem {
+  id: string;
+  name: string;
+}
+
 interface FamilyLocationProps {
-  patientId: string | null;
-  patientName: string;
+  patients: PatientItem[];
+  selectedPatientId: string | null;
+  onSelectPatient: (id: string) => void;
+  patient: PatientItem | null;
 }
 
 const getLat = (loc: any) =>
@@ -40,7 +47,7 @@ const normalizeRecent = (input: any): LocationData[] => {
   return [];
 };
 
-const FamilyLocation = ({ patientId, patientName }: FamilyLocationProps) => {
+const FamilyLocation = ({ patients, selectedPatientId, onSelectPatient, patient }: FamilyLocationProps) => {
   const [currentLocation, setCurrentLocation] = useState<LocationData | null>(null);
   const [recentLocations, setRecentLocations] = useState<LocationData[]>([]);
   const [loading, setLoading] = useState(false);
@@ -48,17 +55,19 @@ const FamilyLocation = ({ patientId, patientName }: FamilyLocationProps) => {
   const { toast } = useToast();
 
   const loadLocations = async () => {
-    if (!patientId) return;
+    if (!patient?.id) return;
     setLoading(true);
     try {
       const [current, recent] = await Promise.all([
-        api.get(`/gps/patient/${patientId}/current`).catch(() => null),
-        api.get(`/gps/patient/${patientId}/recent`).catch(() => null),
+        api.get(`/gps/patient/${patient.id}/current`).catch(() => null),
+        api.get(`/gps/patient/${patient.id}/recent`).catch(() => null),
       ]);
       setCurrentLocation(current as LocationData | null);
       setRecentLocations(normalizeRecent(recent));
-    } catch (err) {
+    } catch {
       toast({ title: "Location Error", description: "Could not fetch location data.", variant: "destructive" });
+      setCurrentLocation(null);
+      setRecentLocations([]);
     } finally {
       setLoading(false);
     }
@@ -66,9 +75,8 @@ const FamilyLocation = ({ patientId, patientName }: FamilyLocationProps) => {
 
   useEffect(() => {
     loadLocations();
-  }, [patientId]);
+  }, [patient?.id]);
 
-  // Build/update Leaflet map whenever data changes
   useEffect(() => {
     const centerLat = getLat(currentLocation) ?? (recentLocations.length > 0 ? getLat(recentLocations[0]) : undefined);
     const centerLng = getLng(currentLocation) ?? (recentLocations.length > 0 ? getLng(recentLocations[0]) : undefined);
@@ -78,7 +86,6 @@ const FamilyLocation = ({ patientId, patientName }: FamilyLocationProps) => {
     const mapContainer = document.getElementById("family-location-map");
     if (!mapContainer) return;
 
-    // Destroy existing map
     if (mapRef.current) {
       mapRef.current.remove();
       mapRef.current = null;
@@ -88,11 +95,10 @@ const FamilyLocation = ({ patientId, patientName }: FamilyLocationProps) => {
     mapRef.current = map;
 
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: "© OpenStreetMap contributors",
+      attribution: " OpenStreetMap contributors",
       maxZoom: 19,
     }).addTo(map);
 
-    // Current location — blue marker
     if (currentLocation && getLat(currentLocation) !== undefined && getLng(currentLocation) !== undefined) {
       const blueIcon = L.divIcon({
         html: `<div style="background:#2563eb;width:16px;height:16px;border-radius:50%;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.4);"></div>`,
@@ -102,16 +108,15 @@ const FamilyLocation = ({ patientId, patientName }: FamilyLocationProps) => {
       });
       L.marker([getLat(currentLocation)!, getLng(currentLocation)!], { icon: blueIcon })
         .addTo(map)
-        .bindPopup(`<b>Current Location</b><br/>${patientName}`);
+        .bindPopup(`<b>Current Location</b><br/>${patient?.name || "Patient"}`);
     }
 
-    // Recent locations — red markers
     recentLocations.forEach((loc, idx) => {
       const lat = getLat(loc);
       const lng = getLng(loc);
       if (lat === undefined || lng === undefined) return;
       const redIcon = L.divIcon({
-        html: `<div style="background:#dc2626;width:10px;height:10px;border-radius:50%;border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.3);opacity:${1 - idx * 0.12};"></div>`,
+        html: `<div style="background:#dc2626;width:10px;height:10px;border-radius:50%;border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.3);opacity:${Math.max(0.25, 1 - idx * 0.12)};"></div>`,
         className: "",
         iconSize: [10, 10],
         iconAnchor: [5, 5],
@@ -127,76 +132,116 @@ const FamilyLocation = ({ patientId, patientName }: FamilyLocationProps) => {
         mapRef.current = null;
       }
     };
-  }, [currentLocation, recentLocations, patientName]);
+  }, [currentLocation, recentLocations, patient?.name]);
 
-  const hasLocation = currentLocation && getLat(currentLocation) !== undefined;
+  const hasLocation = !!currentLocation && getLat(currentLocation) !== undefined && getLng(currentLocation) !== undefined;
 
   return (
     <div className="space-y-4">
       <Card className="care-card">
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-base">Real-time Location</CardTitle>
-            <Button size="sm" variant="outline" className="gap-1.5 h-8" onClick={loadLocations} disabled={loading || !patientId}>
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
-              Refresh
-            </Button>
+        <CardContent className="pt-4">
+          <div className="flex flex-wrap items-center gap-2">
+            {patients.map((p) => (
+              <Button
+                key={p.id}
+                variant={selectedPatientId === p.id ? "default" : "outline"}
+                size="sm"
+                onClick={() => onSelectPatient(p.id)}
+                className="h-8"
+              >
+                <UserRound className="w-3.5 h-3.5 mr-1.5" />
+                {p.name}
+              </Button>
+            ))}
           </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          {!patientId ? (
-            <div className="flex items-center justify-center h-64 text-muted-foreground">
-              <div className="text-center">
-                <MapPin className="w-10 h-10 mx-auto mb-2 opacity-40" />
-                <p className="text-sm">No patient linked</p>
-              </div>
-            </div>
-          ) : !hasLocation && !loading ? (
-            <div className="flex items-center justify-center h-64 text-muted-foreground">
-              <div className="text-center">
-                <MapPin className="w-10 h-10 mx-auto mb-2 opacity-40" />
-                <p className="text-sm">No location data available</p>
-              </div>
-            </div>
-          ) : loading ? (
-            <div className="flex items-center justify-center h-64">
-              <div className="h-8 w-8 rounded-full border-4 border-primary border-t-transparent animate-spin" />
-            </div>
-          ) : (
-            <div id="family-location-map" className="w-full h-[400px] rounded-b-xl" />
-          )}
         </CardContent>
       </Card>
 
-      {/* Location detail */}
-      {hasLocation && (
-        <Card className="care-card">
-          <CardContent className="pt-4 space-y-2">
-            <div className="flex items-center gap-2">
-              <Navigation className="w-4 h-4 text-primary" />
-              <span className="text-sm font-medium">
-                {getLat(currentLocation)!.toFixed(6)}, {getLng(currentLocation)!.toFixed(6)}
-              </span>
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <Card className="care-card xl:col-span-2">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base">Live Location</CardTitle>
+              <Button size="sm" variant="outline" className="gap-1.5 h-8" onClick={loadLocations} disabled={loading || !patient?.id}>
+                <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+                Refresh
+              </Button>
             </div>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Clock className="w-3.5 h-3.5" />
-              <span>
-                Updated:{" "}
-                {currentLocation?.updated_at || currentLocation?.captured_at
-                  ? new Date(
-                      (currentLocation.updated_at ?? currentLocation.captured_at)!
-                    ).toLocaleString()
-                  : "—"}
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Badge variant="outline" className="text-xs">
-                {recentLocations.length} recent points
-              </Badge>
-            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            {!patient?.id ? (
+              <div className="flex items-center justify-center h-72 text-muted-foreground">No linked patient</div>
+            ) : !hasLocation && !loading ? (
+              <div className="flex items-center justify-center h-72 text-muted-foreground">No location data available</div>
+            ) : loading ? (
+              <div className="flex items-center justify-center h-72">
+                <div className="h-8 w-8 rounded-full border-4 border-primary border-t-transparent animate-spin" />
+              </div>
+            ) : (
+              <div id="family-location-map" className="w-full h-[430px] rounded-b-xl" />
+            )}
           </CardContent>
         </Card>
-      )}
+
+        <Card className="care-card">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Route className="w-4 h-4" />
+              Location Details
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {hasLocation ? (
+              <>
+                <div className="flex items-center gap-2 text-sm">
+                  <Navigation className="w-4 h-4 text-primary" />
+                  <span>{getLat(currentLocation)!.toFixed(6)}, {getLng(currentLocation)!.toFixed(6)}</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <MapPin className="w-4 h-4 text-primary" />
+                  <span>{patient?.name || "Patient"}</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Clock className="w-4 h-4" />
+                  <span>
+                    {currentLocation?.updated_at || currentLocation?.captured_at
+                      ? new Date((currentLocation.updated_at ?? currentLocation.captured_at) as string).toLocaleString()
+                      : "-"}
+                  </span>
+                </div>
+                <Badge variant="outline">{recentLocations.length} recent points</Badge>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">No location signal currently available.</p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {recentLocations.length > 0 ? (
+        <Card className="care-card">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Recent Movement Timeline</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {recentLocations.slice(0, 8).map((loc, idx) => {
+              const lat = getLat(loc);
+              const lng = getLng(loc);
+              if (lat === undefined || lng === undefined) return null;
+              const at = loc.captured_at || loc.updated_at;
+              return (
+                <div key={loc.id || `${lat}-${lng}-${idx}`} className="flex items-center justify-between border rounded-lg p-2.5">
+                  <div className="text-sm">
+                    <p className="font-medium">{lat.toFixed(5)}, {lng.toFixed(5)}</p>
+                    <p className="text-xs text-muted-foreground">Accuracy: {typeof loc.accuracy === "number" ? `${loc.accuracy.toFixed(1)} m` : "-"}</p>
+                  </div>
+                  <p className="text-xs text-muted-foreground">{at ? new Date(at).toLocaleString() : "-"}</p>
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      ) : null}
     </div>
   );
 };

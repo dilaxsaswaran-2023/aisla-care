@@ -15,8 +15,8 @@ import { CaregiverLocation } from "@/components/caregiver/CaregiverLocation";
 import { CaregiverTasks } from "@/components/caregiver/CaregiverTasks";
 import { CaregiverAlerts } from "@/components/caregiver/CaregiverAlerts";
 import { NotificationDropdown } from "@/components/caregiver/NotificationDropdown";
+import { EmergencyBanner } from "@/components/caregiver/EmergencyBanner";
 import { useFirebaseAlerts } from "@/hooks/useFirebaseAlerts";
-import { toast as sonnerToast } from "sonner";
 
 interface Contact { id: string; name: string; }
 interface FamilyContact { id: string; name: string; patientName: string; }
@@ -64,6 +64,7 @@ const Caregiver = () => {
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [budiiAlerts, setBudiiAlerts] = useState<AlertItem[]>([]);
   const [loadingAlerts, setLoadingAlerts] = useState(true);
+  const [emergencyBannerVisible, setEmergencyBannerVisible] = useState(true);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -129,20 +130,9 @@ const Caregiver = () => {
 
   useEffect(() => {
     if (!latestAlert) return;
-    sonnerToast.error(
-      `🚨 ${latestAlert.patient_name ?? "Patient"} — ${latestAlert.title}`,
-      {
-        description: latestAlert.message,
-        duration: Infinity,
-        action: {
-          label: 'Close',
-          // dismiss the toast when clicked
-          onClick: () => sonnerToast.dismiss && sonnerToast.dismiss(),
-        },
-      }
-    );
+    // Show emergency banner instead of sonner toast
+    setEmergencyBannerVisible(true);
     loadAlerts();
-    clearLatest();
   }, [latestAlert]);
 
   const handleMarkAllRead = async () => {
@@ -165,6 +155,28 @@ const Caregiver = () => {
   };
 
   const onRefresh = () => { loadAlerts(); loadPatients(); };
+
+  // Filter Firebase alert for banner display (only SOS and geofence breach)
+  const firebaseEmergencyAlert = useMemo(() => {
+    if (!latestAlert) return null;
+    // accept 'sos' and the geofence alert types
+    const isEmergency = latestAlert.alert_type === 'sos' || latestAlert.alert_type === 'geofence' || latestAlert.alert_type === 'geofence_breach';
+    if (!isEmergency) return null;
+    // map Firebase alert shape to AlertItem shape expected by EmergencyBanner
+    const la: any = latestAlert as any;
+    return {
+      id: la.id || String(Date.now()),
+      alert_type: la.alert_type || 'sos',
+      status: la.status || 'active',
+      priority: la.priority || 'high',
+      title: la.title || 'Emergency',
+      message: la.message || '',
+      voice_transcription: la.voice_transcription,
+      patient_name: la.patient_name || '',
+      created_at: la.created_at || new Date().toISOString(),
+      source: 'firebase',
+    } as any;
+  }, [latestAlert]);
 
   const pageTitles: Record<string, { title: string; desc: string }> = {
     overview: { title: "Overview", desc: "Real-time snapshot of your care operations" },
@@ -201,6 +213,14 @@ const Caregiver = () => {
         </div>
       }
     >
+      {emergencyBannerVisible && firebaseEmergencyAlert && (
+        <div className="mb-4">
+          <EmergencyBanner
+            alert={firebaseEmergencyAlert}
+            onClose={() => { setEmergencyBannerVisible(false); clearLatest(); }}
+          />
+        </div>
+      )}
       {activeTab === "overview" && (
         <CaregiverOverview
           patients={patients}

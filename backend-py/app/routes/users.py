@@ -3,7 +3,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
+from sqlalchemy import or_, text
 from passlib.context import CryptContext
 
 from app.database import get_db
@@ -106,35 +106,51 @@ def get_patients(
     db: Session = Depends(get_db),
 ):
     user_id = uuid.UUID(current_user["userId"])
+    role = current_user["role"]
     
-    # Get all patients where the current user is the caregiver
-    patients = db.query(User).filter(
-        User.caregiver_id == user_id,
-        User.role == "patient"
-    ).all()
+    # Get patients based on user role
+    if role == "caregiver":
+        # Caregiver: get all patients assigned to this caregiver
+        patients = db.query(User).filter(
+            User.caregiver_id == user_id,
+            User.role == "patient"
+        ).all()
+    elif role == "family":
+        # Family member: get all patients where this family member is in family_ids
+        # Use PostgreSQL @> operator to check if family_ids array contains the user_id
+        patients = db.query(User).filter(
+            User.role == "patient",
+            text(f"family_ids @> ARRAY['{user_id}']::uuid[]")
+        ).all()
+    else:
+        # Other roles (admin, super_admin) cannot access patients via this endpoint
+        raise HTTPException(403, "Only caregivers and family members can access patient data")
 
     patient_ids = [p.id for p in patients]
 
-    # Family members linked to the caregiver's patients
-    family_rels = db.query(Relationship).filter(
-        Relationship.patient_id.in_(patient_ids),
-        Relationship.relationship_type == "family",
-    ).all() if patient_ids else []
-
-    # Build mapping: family_member_id → patient_name
-    patient_map = {p.id: p.full_name for p in patients}
-    fm_to_patient: dict[str, str] = {}
-    for rel in family_rels:
-        fm_to_patient[str(rel.related_user_id)] = patient_map.get(rel.patient_id, "Patient")
-
-    family_ids = list({r.related_user_id for r in family_rels})
-    family_members = db.query(User).filter(User.id.in_(family_ids)).all() if family_ids else []
-
+    # Only fetch related family members if the caller is a caregiver
+    # Family members calling this API only need to see patients, not other family members
     family_result = []
-    for f in family_members:
-        fd = f.to_dict()
-        fd["patient_name"] = fm_to_patient.get(str(f.id), "")
-        family_result.append(fd)
+    if role == "caregiver":
+        # Family members linked to the caregiver's patients
+        family_rels = db.query(Relationship).filter(
+            Relationship.patient_id.in_(patient_ids),
+            Relationship.relationship_type == "family",
+        ).all() if patient_ids else []
+
+        # Build mapping: family_member_id → patient_name
+        patient_map = {p.id: p.full_name for p in patients}
+        fm_to_patient: dict[str, str] = {}
+        for rel in family_rels:
+            fm_to_patient[str(rel.related_user_id)] = patient_map.get(rel.patient_id, "Patient")
+
+        family_ids = list({r.related_user_id for r in family_rels})
+        family_members = db.query(User).filter(User.id.in_(family_ids)).all() if family_ids else []
+
+        for f in family_members:
+            fd = f.to_dict()
+            fd["patient_name"] = fm_to_patient.get(str(f.id), "")
+            family_result.append(fd)
 
     return {
         "patients": [p.to_dict() for p in patients],

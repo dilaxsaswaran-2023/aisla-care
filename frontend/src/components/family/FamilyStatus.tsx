@@ -1,20 +1,35 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Heart, MapPin, Clock, Phone, Video, Bell, Activity } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { Activity, HeartPulse, Clock, Phone, MessageSquare, Shield, AlertTriangle, UserRound } from "lucide-react";
 
 interface AlertItem {
   id: string;
   title: string;
   message: string;
-  severity: string;
+  severity?: string;
+  priority?: string;
   status: string;
   created_at: string;
 }
 
+interface PatientItem {
+  id: string;
+  name: string;
+  caregiver_id?: string | null;
+  phone_country?: string | null;
+  phone_number?: string | null;
+  address?: string | null;
+  geofence_state?: string | null;
+  is_geofencing?: boolean;
+  updated_at?: string | null;
+}
+
 interface FamilyStatusProps {
-  patient: { id: string; name: string } | null;
+  patients: PatientItem[];
+  selectedPatientId: string | null;
+  onSelectPatient: (id: string) => void;
+  patient: PatientItem | null;
   caregiver: { id: string; name: string } | null;
   alerts: AlertItem[];
   loading: boolean;
@@ -22,14 +37,20 @@ interface FamilyStatusProps {
   onMessageCaregiver: () => void;
 }
 
-const severityColor: Record<string, string> = {
-  critical: "bg-destructive",
-  high: "bg-destructive/70",
-  medium: "bg-warning",
-  low: "bg-success",
+const getAlertLevel = (alerts: AlertItem[]) => {
+  const unresolved = alerts.filter((a) => a.status !== "resolved" && a.status !== "read");
+  const hasCritical = unresolved.some((a) => (a.severity || a.priority || "").toLowerCase() === "critical");
+  const hasHigh = unresolved.some((a) => (a.severity || a.priority || "").toLowerCase() === "high");
+
+  if (hasCritical) return { label: "Attention Needed", color: "text-red-700", dot: "bg-red-600" };
+  if (hasHigh) return { label: "Watch Closely", color: "text-amber-700", dot: "bg-amber-500" };
+  return { label: "Stable", color: "text-green-700", dot: "bg-green-600" };
 };
 
 const FamilyStatus = ({
+  patients,
+  selectedPatientId,
+  onSelectPatient,
   patient,
   caregiver,
   alerts,
@@ -37,16 +58,8 @@ const FamilyStatus = ({
   onCallCaregiver,
   onMessageCaregiver,
 }: FamilyStatusProps) => {
-  const navigate = useNavigate();
-
-  const recentAlerts = alerts.slice(0, 5);
-  const initials = (name: string) =>
-    name
-      .split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2);
+  const recentAlerts = alerts.slice(0, 6);
+  const status = getAlertLevel(alerts);
 
   if (loading) {
     return (
@@ -58,45 +71,87 @@ const FamilyStatus = ({
     );
   }
 
+  if (!patient) {
+    return (
+      <Card className="care-card">
+        <CardContent className="py-10 text-center text-muted-foreground">
+          No linked patients found for this family account.
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
-    <div className="space-y-6">
-      {/* Status cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card className="care-card p-5">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-              Current Status
-            </span>
-            <Heart className="w-4 h-4 text-success" />
+    <div className="space-y-5">
+      <Card className="care-card">
+        <CardContent className="pt-4">
+          <div className="flex flex-wrap items-center gap-2">
+            {patients.map((p) => (
+              <Button
+                key={p.id}
+                variant={selectedPatientId === p.id ? "default" : "outline"}
+                size="sm"
+                onClick={() => onSelectPatient(p.id)}
+                className="h-8"
+              >
+                <UserRound className="w-3.5 h-3.5 mr-1.5" />
+                {p.name}
+              </Button>
+            ))}
           </div>
-          <div className="flex items-center gap-3">
-            <div className="w-2.5 h-2.5 rounded-full bg-success animate-pulse" />
-            <span className="text-2xl font-bold text-success">Safe & Well</span>
-          </div>
-          <p className="text-xs text-muted-foreground mt-2">
-            {patient ? patient.name : "—"}
-          </p>
+        </CardContent>
+      </Card>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card className="care-card md:col-span-2">
+          <CardContent className="pt-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Current Condition</p>
+              <HeartPulse className="w-4 h-4 text-primary" />
+            </div>
+            <div className="flex items-center gap-2">
+              <span className={`w-2.5 h-2.5 rounded-full ${status.dot}`} />
+              <span className={`text-2xl font-semibold ${status.color}`}>{status.label}</span>
+            </div>
+            <p className="text-sm text-muted-foreground">{patient.name}</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+              <div>
+                <p className="text-xs text-muted-foreground">Phone</p>
+                <p>{patient.phone_country || ""} {patient.phone_number || "-"}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Last profile update</p>
+                <p>{patient.updated_at ? new Date(patient.updated_at).toLocaleString() : "-"}</p>
+              </div>
+              <div className="sm:col-span-2">
+                <p className="text-xs text-muted-foreground">Address</p>
+                <p>{patient.address || "-"}</p>
+              </div>
+            </div>
+          </CardContent>
         </Card>
-        <Card
-          className="care-card p-5 cursor-pointer hover:ring-1 hover:ring-primary/30 transition"
-          onClick={() => navigate("?tab=location")}
-        >
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-              Location
-            </span>
-            <MapPin className="w-4 h-4 text-primary" />
-          </div>
-          <p className="text-lg font-semibold text-foreground">View Map</p>
-          <p className="text-xs text-muted-foreground mt-1">
-            Tap to see real-time location
-          </p>
+
+        <Card className="care-card">
+          <CardContent className="pt-5 space-y-3">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Geofence</p>
+            <div className="flex items-center gap-2">
+              <Shield className="w-4 h-4 text-primary" />
+              <Badge variant={patient.is_geofencing ? "default" : "secondary"}>
+                {patient.is_geofencing ? "Enabled" : "Disabled"}
+              </Badge>
+            </div>
+            <p className="text-sm">
+              State: <span className="font-medium capitalize">{patient.geofence_state || "unknown"}</span>
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Geofence alerts will appear when movement crosses configured boundaries.
+            </p>
+          </CardContent>
         </Card>
       </div>
 
-      {/* Today's alerts as activity */}
       <Card className="care-card">
-        <CardHeader className="pb-3">
+        <CardHeader className="pb-2">
           <CardTitle className="text-base flex items-center gap-2">
             <Activity className="w-4 h-4" />
             Recent Alerts
@@ -104,96 +159,55 @@ const FamilyStatus = ({
         </CardHeader>
         <CardContent className="space-y-3">
           {recentAlerts.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-4">
-              No recent alerts
-            </p>
+            <p className="text-sm text-muted-foreground text-center py-3">No recent alerts</p>
           ) : (
-            recentAlerts.map((alert) => (
-              <div
-                key={alert.id}
-                className="flex items-start gap-3 pb-3 border-b border-border last:border-0 last:pb-0"
-              >
-                <div
-                  className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${
-                    severityColor[alert.severity] || "bg-muted-foreground"
-                  }`}
-                />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="text-sm font-medium text-foreground truncate">
-                      {alert.title}
-                    </p>
-                    <Badge variant="outline" className="text-xs capitalize shrink-0">
-                      {alert.severity}
-                    </Badge>
+            recentAlerts.map((alert) => {
+              const sev = (alert.severity || alert.priority || "low").toLowerCase();
+              const isCritical = sev === "critical" || sev === "high";
+              return (
+                <div key={alert.id} className="border rounded-lg p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium break-words">{alert.title}</p>
+                      {alert.message ? (
+                        <p className="text-xs text-muted-foreground mt-1 break-words">{alert.message}</p>
+                      ) : null}
+                      <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1.5">
+                        <Clock className="w-3.5 h-3.5" />
+                        {new Date(alert.created_at).toLocaleString()}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {isCritical ? <AlertTriangle className="w-4 h-4 text-red-600" /> : null}
+                      <Badge variant="outline" className="capitalize text-xs">{sev}</Badge>
+                    </div>
                   </div>
-                  {alert.message && (
-                    <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
-                      {alert.message}
-                    </p>
-                  )}
-                  <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
-                    <Clock className="w-3 h-3" />
-                    {new Date(alert.created_at).toLocaleString()}
-                  </p>
                 </div>
-                <Badge
-                  variant={alert.status === "resolved" ? "secondary" : "outline"}
-                  className="text-xs shrink-0 capitalize"
-                >
-                  {alert.status}
-                </Badge>
-              </div>
-            ))
+              );
+            })
           )}
         </CardContent>
       </Card>
 
-      {/* Assigned Caregiver */}
       <Card className="care-card">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Assigned Caregiver</CardTitle>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Care Team Contact</CardTitle>
         </CardHeader>
-        <CardContent>
-          {caregiver ? (
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
-                  <span className="text-sm font-bold text-primary">
-                    {initials(caregiver.name)}
-                  </span>
-                </div>
-                <div>
-                  <p className="font-semibold text-sm text-foreground">
-                    {caregiver.name}
-                  </p>
-                  <p className="text-xs text-muted-foreground">Senior Care Specialist</p>
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="gap-1.5 h-8"
-                  onClick={onCallCaregiver}
-                >
-                  <Phone className="w-3.5 h-3.5" />
-                  Call
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="gap-1.5 h-8"
-                  onClick={onMessageCaregiver}
-                >
-                  <Video className="w-3.5 h-3.5" />
-                  Video
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">No caregiver assigned</p>
-          )}
+        <CardContent className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <p className="font-medium">{caregiver?.name || "Caregiver"}</p>
+            <p className="text-xs text-muted-foreground">Primary caregiver for this patient</p>
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={onCallCaregiver} className="gap-1.5">
+              <Phone className="w-3.5 h-3.5" />
+              Call
+            </Button>
+            <Button size="sm" variant="outline" onClick={onMessageCaregiver} className="gap-1.5">
+              <MessageSquare className="w-3.5 h-3.5" />
+              Message
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>
