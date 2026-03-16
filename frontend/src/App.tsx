@@ -16,6 +16,7 @@ import Patient from "./pages/Patient";
 import Admin from "./pages/Admin";
 import SuperAdmin from "./pages/SuperAdmin";
 import FirebaseTest from "./pages/FirebaseTest";
+import PatientDetail from "./pages/PatientDetail";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -45,6 +46,10 @@ const App = () => (
             <Route 
               path="/caregiver" 
               element={<ProtectedRoute element={<Caregiver />} requiredRole="caregiver" />} 
+            />
+            <Route 
+              path="/caregiver/patient/:patientId" 
+              element={<ProtectedRoute element={<PatientDetail />} requiredRole="caregiver" />} 
             />
             <Route 
               path="/family" 

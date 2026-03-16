@@ -99,7 +99,55 @@ def family_list(
     return [{"_id": str(f.id), "email": f.email, "full_name": f.full_name} for f in families]
 
 
-# ─── GET /api/users/patients ─────────────────────────────────────────────────
+# ─── GET /api/users/{user_id} ───────────────────────────────────────────────
+@router.get("/{user_id}")
+def get_user(
+    user_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        target_id = uuid.UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid user ID")
+    
+    user = db.query(User).filter(User.id == target_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Check if current user has permission to view this user
+    role = current_user["role"]
+    current_id = uuid.UUID(current_user["userId"])
+    
+    if role == "super_admin":
+        pass  # can view all
+    elif role == "admin":
+        if user.corporate_id != current_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+    elif role == "caregiver":
+        # Can view patients assigned to them and family members of those patients
+        if user.role == "patient" and user.caregiver_id != current_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+        elif user.role == "family":
+            # Check if this family member is related to any of the caregiver's patients
+            related_patients = db.query(User).filter(
+                User.caregiver_id == current_id,
+                User.role == "patient"
+            ).all()
+            patient_ids = [p.id for p in related_patients]
+            has_relationship = db.query(Relationship).filter(
+                Relationship.patient_id.in_(patient_ids),
+                Relationship.related_user_id == target_id,
+                Relationship.relationship_type == "family"
+            ).first()
+            if not has_relationship:
+                raise HTTPException(status_code=403, detail="Access denied")
+    else:
+        # Other roles can only view themselves
+        if target_id != current_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+    
+    return user.to_dict()
 @router.get("/patients")
 def get_patients(
     current_user: dict = Depends(get_current_user),

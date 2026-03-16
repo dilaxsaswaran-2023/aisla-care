@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { UserPlus, MessageSquare, Phone, MapPin, Activity, ChevronDown, Settings } from 'lucide-react';
+import { UserPlus, MessageSquare, Phone, MapPin, Activity, ChevronDown, Settings, User } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import GeofenceSettingsDialog from './GeofenceSettingsDialog';
 import { useAuth } from '@/contexts/AuthContext';
@@ -466,6 +466,18 @@ export const PatientManagement = ({ isMobile }: { isMobile?: boolean }) => {
                   >
                     <MapPin className="w-3.5 h-3.5" />
                     {!isMobile && <span className="text-xs">Location</span>}
+                  </Button>
+                                    <Button
+                    size="sm"
+                    variant={isMobile ? "ghost" : "outline"}
+                    className={`gap-1.5 h-8 ${isMobile ? "p-2" : ""}`}
+                    title="View Details"
+                    onClick={() => {
+                      navigate(`/caregiver/patient/${patient.id}`);
+                    }}
+                  >
+                    <User className="w-3.5 h-3.5" />
+                    {!isMobile && <span className="text-xs">Details</span>}
                   </Button>
                 </div>
               </div>

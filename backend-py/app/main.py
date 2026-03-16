@@ -33,6 +33,7 @@ from app.routes.ai import router as ai_router
 from app.routes.budii import router as budii_router
 from app.routes.budii_alert import router as budii_alert_router
 from app.routes.monitor import router as monitor_router
+from app.routes.medication_schedules import router as medication_schedules_router
 
 settings = get_settings()
 import logging
@@ -238,6 +239,7 @@ app.include_router(ai_router)
 app.include_router(budii_router)
 app.include_router(budii_alert_router)
 app.include_router(monitor_router)
+app.include_router(medication_schedules_router)
 
 # Health check
 @app.get("/api/health")
