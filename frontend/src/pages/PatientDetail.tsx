@@ -25,7 +25,7 @@ import {
   Phone,
   Mail,
   Activity
-} from "lucide-react";
+  , Edit, Power } from "lucide-react";
 import MedicationScheduleDialog from "@/components/patient/MedicationScheduleDialog";
 
 interface Patient {
@@ -62,6 +62,8 @@ interface MedicationSchedule {
   meal_timing?: string;
   dosage_type?: string;
   dosage_count?: number;
+  urgency_level?: string;
+  grace_period_minutes?: number;
   is_active: boolean;
   created_at: string;
 }
@@ -77,6 +79,9 @@ const PatientDetail = () => {
   const [medicationSchedules, setMedicationSchedules] = useState<MedicationSchedule[]>([]);
   const [loading, setLoading] = useState(true);
   const [addScheduleOpen, setAddScheduleOpen] = useState(false);
+  const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null);
+  const [toggleConfirmOpen, setToggleConfirmOpen] = useState(false);
+  const [scheduleToToggle, setScheduleToToggle] = useState<string | null>(null);
 
   // Form state for new medication schedule
   const [scheduleForm, setScheduleForm] = useState({
@@ -89,6 +94,8 @@ const PatientDetail = () => {
     meal_timing: "",
     dosage_type: "",
     dosage_count: 1,
+    urgency_level: "medium",
+    grace_period_minutes: 60,
     is_active: true,
   });
 
@@ -138,19 +145,29 @@ const PatientDetail = () => {
         ...scheduleForm,
         scheduled_times: scheduleForm.scheduled_times.filter(t => t.trim() !== ""),
       };
-
-      await api.post('/medication-schedules', payload);
-      toast({
-        title: "Success",
-        description: "Medication schedule added successfully",
-      });
+      let updatedSchedule;
+      if (editingScheduleId) {
+        updatedSchedule = await api.patch(`/medication-schedules/${editingScheduleId}`, payload);
+        setMedicationSchedules(prev => prev.map(s => s.id === editingScheduleId ? updatedSchedule : s));
+        toast({
+          title: "Success",
+          description: "Medication schedule updated successfully",
+        });
+      } else {
+        updatedSchedule = await api.post('/medication-schedules', payload);
+        setMedicationSchedules(prev => [...prev, updatedSchedule]);
+        toast({
+          title: "Success",
+          description: "Medication schedule added successfully",
+        });
+      }
       setAddScheduleOpen(false);
       resetScheduleForm();
-      loadPatientData();
+      setEditingScheduleId(null);
     } catch (error: any) {
       toast({
         title: "Error",
-        description: error.message || "Failed to add medication schedule",
+        description: error.message || "Failed to save medication schedule",
         variant: "destructive",
       });
     }
@@ -167,8 +184,54 @@ const PatientDetail = () => {
       meal_timing: "",
       dosage_type: "",
       dosage_count: 1,
+      urgency_level: "medium",
+      grace_period_minutes: 60,
       is_active: true,
     });
+    setEditingScheduleId(null);
+  };
+
+  const handleEditSchedule = (schedule: MedicationSchedule) => {
+    setScheduleForm({
+      name: schedule.name || "",
+      description: schedule.description || "",
+      prescription: schedule.prescription || "",
+      schedule_type: schedule.schedule_type || "daily",
+      scheduled_times: schedule.scheduled_times && schedule.scheduled_times.length ? schedule.scheduled_times : [""],
+      days_of_week: schedule.days_of_week || [],
+      meal_timing: schedule.meal_timing || "",
+      dosage_type: schedule.dosage_type || "",
+      dosage_count: schedule.dosage_count || 1,
+      urgency_level: schedule.urgency_level || "medium",
+      grace_period_minutes: schedule.grace_period_minutes || 60,
+      is_active: schedule.is_active,
+    });
+    setEditingScheduleId(schedule.id);
+    setAddScheduleOpen(true);
+  };
+
+  const handleToggleActive = async (scheduleId: string) => {
+    // open confirmation dialog and set target schedule
+    setScheduleToToggle(scheduleId);
+    setToggleConfirmOpen(true);
+  };
+
+  const confirmToggleActive = async () => {
+    if (!scheduleToToggle) return;
+    try {
+      const res = await api.patch(`/medication-schedules/${scheduleToToggle}/toggle-active`);
+      // If API returned the updated schedule, replace it, otherwise toggle locally
+      if (res && res.id) {
+        setMedicationSchedules(prev => prev.map(s => s.id === res.id ? res : s));
+      } else {
+        setMedicationSchedules(prev => prev.map(s => s.id === scheduleToToggle ? { ...s, is_active: !s.is_active } : s));
+      }
+      setToggleConfirmOpen(false);
+      setScheduleToToggle(null);
+      toast({ title: 'Success', description: 'Schedule status updated' });
+    } catch (err: any) {
+      toast({ title: 'Error', description: err.message || 'Failed to toggle schedule', variant: 'destructive' });
+    }
   };
 
   const addTimeSlot = () => {
@@ -333,6 +396,8 @@ const PatientDetail = () => {
                 removeTimeSlot={removeTimeSlot}
                 toggleDayOfWeek={toggleDayOfWeek}
                 handleAddSchedule={handleAddSchedule}
+                isEditing={!!editingScheduleId}
+                submitLabel={editingScheduleId ? 'Save Changes' : undefined}
               />
             </div>
           </CardHeader>
@@ -340,35 +405,69 @@ const PatientDetail = () => {
             {medicationSchedules.length === 0 ? (
               <p className="text-muted-foreground">No medication schedules</p>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-2">
                 {medicationSchedules.map((schedule) => (
-                  <div key={schedule.id} className="p-4 border rounded-lg">
-                    <div className="flex items-center justify-between mb-2">
-                      <h3 className="font-medium">{schedule.name}</h3>
-                      <Badge variant={schedule.is_active ? "default" : "secondary"}>
-                        {schedule.is_active ? "Active" : "Inactive"}
-                      </Badge>
-                    </div>
-                    {schedule.description && (
-                      <p className="text-sm text-muted-foreground mb-2">{schedule.description}</p>
-                    )}
-                    <div className="flex items-center gap-4 text-sm">
-                      <div className="flex items-center gap-1">
-                        <Clock className="w-4 h-4" />
-                        {schedule.scheduled_times.join(", ")}
+                  <div key={schedule.id} className="p-3 border rounded-md flex items-center justify-between gap-4">
+                    <div className="flex items-start gap-3">
+                      <div className="min-w-0">
+                        <h3 className="font-medium text-sm truncate">{schedule.name}</h3>
+                        {schedule.description && (
+                          <p className="text-xs text-muted-foreground truncate max-w-xl">{schedule.description}</p>
+                        )}
+                        <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
+                          <div className="flex items-center gap-1">
+                            <Clock className="w-3 h-3" />
+                            <span>{schedule.scheduled_times.join(', ')}</span>
+                          </div>
+                          {schedule.schedule_type !== 'daily' && schedule.days_of_week && (
+                            <div className="flex items-center gap-1">
+                              <Calendar className="w-3 h-3" />
+                              <span>{schedule.days_of_week.map(d => dayNames[d]).join(', ')}</span>
+                            </div>
+                          )}
+                          {schedule.dosage_type && schedule.dosage_count && (
+                            <div className="flex items-center gap-1">
+                              <Pill className="w-3 h-3" />
+                              <span>{schedule.dosage_count} {schedule.dosage_type}</span>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      {schedule.schedule_type !== 'daily' && schedule.days_of_week && (
-                        <div className="flex items-center gap-1">
-                          <Calendar className="w-4 h-4" />
-                          {schedule.days_of_week.map(d => dayNames[d]).join(", ")}
-                        </div>
-                      )}
-                      {schedule.dosage_type && schedule.dosage_count && (
-                        <div>
-                          {schedule.dosage_count} {schedule.dosage_type}
-                          {schedule.meal_timing && ` (${schedule.meal_timing.replace('_', ' ')})`}
-                        </div>
-                      )}
+                    </div>
+
+                    <div className="flex flex-col items-end gap-2">
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleEditSchedule(schedule)}
+                          aria-label={`Edit ${schedule.name}`}
+                        >
+                          <Edit className="w-4 h-4" />
+                        </Button>
+
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleToggleActive(schedule.id)}
+                          aria-label={`${schedule.is_active ? 'Deactivate' : 'Activate'} ${schedule.name}`}
+                        >
+                          <Power className={`w-4 h-4 ${schedule.is_active ? '' : 'text-muted-foreground'}`} />
+                        </Button>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                      <Badge
+                        variant={schedule.urgency_level === 'high' ? 'destructive' : schedule.urgency_level === 'low' ? 'secondary' : 'default'}
+                      >
+                        {schedule.urgency_level ? schedule.urgency_level.toUpperCase() : 'MED'}
+                      </Badge>
+
+                      <Badge variant={schedule.is_active ? 'default' : 'secondary'} className="text-xs">
+                        {schedule.is_active ? 'Active' : 'Inactive'}
+                      </Badge>
+                      </div>
+                      <div className="text-xs text-muted-foreground">{schedule.grace_period_minutes} min</div>
                     </div>
                   </div>
                 ))}
@@ -377,6 +476,25 @@ const PatientDetail = () => {
           </CardContent>
           </Card>
         </div>
+
+        {/* Toggle Confirmation Dialog */}
+        <Dialog open={toggleConfirmOpen} onOpenChange={setToggleConfirmOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Confirm Action</DialogTitle>
+            </DialogHeader>
+            <p>Are you sure you want to toggle the active status of this medication schedule?</p>
+            <div className="flex justify-end gap-2 mt-4">
+              <Button variant="outline" onClick={() => setToggleConfirmOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={confirmToggleActive}>
+                Confirm
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
       </div>
     </div>
   );

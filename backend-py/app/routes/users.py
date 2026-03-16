@@ -148,6 +148,8 @@ def get_user(
             raise HTTPException(status_code=403, detail="Access denied")
     
     return user.to_dict()
+
+
 @router.get("/patients")
 def get_patients(
     current_user: dict = Depends(get_current_user),

@@ -22,6 +22,8 @@ class MedicationSchedule(Base):
     meal_timing = Column(String, nullable=True)  # "before_meal", "after_meal", "with_meal"
     dosage_type = Column(String, nullable=True)  # "tablet", "capsule", "ml", "drops", etc.
     dosage_count = Column(Integer, nullable=True)  # Number of units
+    urgency_level = Column(String, nullable=False, default="medium")  # "low", "medium", "high"
+    grace_period_minutes = Column(Integer, nullable=False, default=60)  # 30, 60, 120
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -40,6 +42,8 @@ class MedicationSchedule(Base):
             "meal_timing": self.meal_timing,
             "dosage_type": self.dosage_type,
             "dosage_count": self.dosage_count,
+            "urgency_level": self.urgency_level,
+            "grace_period_minutes": self.grace_period_minutes,
             "is_active": self.is_active,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,

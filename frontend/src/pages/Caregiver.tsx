@@ -99,16 +99,13 @@ const Caregiver = () => {
     if (!user) return;
     setLoading(true);
     try {
-      const data = await api.get('/users/patients') as any;
-      if (data?.patients) {
-        const pats: Contact[] = data.patients.map((p: any) => ({ id: p.id || p._id, name: p.full_name }));
+      const data = await api.get('/users/') as any;
+      if (data) {
+        const pats: Contact[] = data.map((p: any) => ({ id: p.id || p._id, name: p.full_name }));
         setPatients(pats);
       }
-      if (data?.familyMembers) {
-        setFamilyMembers(data.familyMembers.map((f: any) => ({
-          id: f.id || f._id, name: f.full_name, patientName: f.patient_name || '',
-        })));
-      }
+      // Note: familyMembers not loaded from this endpoint
+      setFamilyMembers([]);
     } catch { /* non-critical */ }
     setLoading(false);
   };

@@ -24,6 +24,8 @@ class MedicationScheduleCreate(BaseModel):
     meal_timing: Optional[str] = Field(None, description="Meal timing: before_meal, after_meal, with_meal")
     dosage_type: Optional[str] = Field(None, description="Dosage type: tablet, capsule, ml, drops, etc.")
     dosage_count: Optional[int] = Field(None, description="Number of dosage units")
+    urgency_level: str = Field("medium", description="Medication urgency: low, medium, high")
+    grace_period_minutes: int = Field(60, description="Grace period in minutes: 30, 60, 120")
     is_active: bool = Field(True, description="Whether the schedule is active")
 
 class MedicationScheduleUpdate(BaseModel):
@@ -36,7 +38,48 @@ class MedicationScheduleUpdate(BaseModel):
     meal_timing: Optional[str] = None
     dosage_type: Optional[str] = None
     dosage_count: Optional[int] = None
+    urgency_level: Optional[str] = None
+    grace_period_minutes: Optional[int] = None
     is_active: Optional[bool] = None
+
+
+def _get_accessible_patient_ids(db: Session, current_user: dict) -> List[uuid.UUID]:
+    """Return patient IDs the caller is allowed to access."""
+    from app.models.relationship import Relationship
+
+    user_id = uuid.UUID(current_user["userId"])
+    role = current_user.get("role")
+
+    if role in ["super_admin", "admin"]:
+        return [row.id for row in db.query(User.id).filter(User.role == "patient").all()]
+
+    if role == "patient":
+        return [user_id]
+
+    relationship_rows = db.query(Relationship.patient_id).filter(
+        Relationship.related_user_id == user_id,
+        Relationship.patient_id.isnot(None),
+    )
+
+    if role == "family":
+        relationship_rows = relationship_rows.filter(Relationship.relationship_type == "family")
+        return [row.patient_id for row in relationship_rows.all()]
+
+    if role == "caregiver":
+        related_patient_ids = [row.patient_id for row in relationship_rows.all()]
+        assigned_patient_ids = [
+            row.id for row in db.query(User.id).filter(
+                User.role == "patient",
+                User.caregiver_id == user_id,
+            ).all()
+        ]
+        return list(set(related_patient_ids + assigned_patient_ids))
+
+    return []
+
+
+def _has_patient_access(db: Session, current_user: dict, patient_id: uuid.UUID) -> bool:
+    return patient_id in _get_accessible_patient_ids(db, current_user)
 
 # GET /api/medication-schedules - List all medication schedules for current user's patients
 @router.get("/")
@@ -45,36 +88,24 @@ def list_medication_schedules(
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    user_id = uuid.UUID(current_user["userId"])
-    
-    # Get patients that this user can access (caregiver or family)
-    from app.models.relationship import Relationship
-    accessible_patient_ids = []
-    
-    # If user is caregiver or family, get their patients
-    relationships = db.query(Relationship).filter(
-        Relationship.related_user_id == user_id,
-        Relationship.patient_id.isnot(None)
-    ).all()
-    accessible_patient_ids.extend([str(r.patient_id) for r in relationships])
-    
-    # Remove duplicates
-    accessible_patient_ids = list(set(accessible_patient_ids))
-    
+    accessible_patient_ids = _get_accessible_patient_ids(db, current_user)
+
     if not accessible_patient_ids:
         return []
-    
+
     query = db.query(MedicationSchedule).filter(
-        MedicationSchedule.patient_id.in_([uuid.UUID(pid) for pid in accessible_patient_ids])
+        MedicationSchedule.patient_id.in_(accessible_patient_ids)
     )
-    
+
     if patient_id:
         try:
             pid = uuid.UUID(patient_id)
+            if pid not in accessible_patient_ids:
+                raise HTTPException(status_code=403, detail="Access denied")
             query = query.filter(MedicationSchedule.patient_id == pid)
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid patient_id")
-    
+
     schedules = query.order_by(MedicationSchedule.created_at.desc()).all()
     return [s.to_dict() for s in schedules]
 
@@ -93,18 +124,10 @@ def get_medication_schedule(
     schedule = db.query(MedicationSchedule).filter(MedicationSchedule.id == sid).first()
     if not schedule:
         raise HTTPException(status_code=404, detail="Medication schedule not found")
-    
-    # Check if user has access to this patient's schedules
-    user_id = uuid.UUID(current_user["userId"])
-    from app.models.relationship import Relationship
-    has_access = db.query(Relationship).filter(
-        ((Relationship.caregiver_id == user_id) | (Relationship.family_id == user_id)) &
-        (Relationship.patient_id == schedule.patient_id)
-    ).first()
-    
-    if not has_access:
+
+    if not _has_patient_access(db, current_user, schedule.patient_id):
         raise HTTPException(status_code=403, detail="Access denied")
-    
+
     return schedule.to_dict()
 
 # POST /api/medication-schedules - Create new medication schedule
@@ -115,36 +138,42 @@ def create_medication_schedule(
     db: Session = Depends(get_db),
 ):
     user_id = uuid.UUID(current_user["userId"])
-    
-    # Check if user has access to this patient
-    from app.models.relationship import Relationship
-    has_access = db.query(Relationship).filter(
-        (Relationship.related_user_id == user_id) &
-        (Relationship.patient_id == uuid.UUID(body.patient_id))
-    ).first()
-    
-    if not has_access:
+
+    try:
+        patient_uuid = uuid.UUID(body.patient_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid patient_id")
+
+    if not _has_patient_access(db, current_user, patient_uuid):
         raise HTTPException(status_code=403, detail="Access denied")
-    
+
     # Validate schedule_type
     if body.schedule_type not in ["daily", "weekly", "selective"]:
         raise HTTPException(status_code=400, detail="Invalid schedule_type")
-    
+
     # Validate meal_timing
     if body.meal_timing and body.meal_timing not in ["before_meal", "after_meal", "with_meal"]:
         raise HTTPException(status_code=400, detail="Invalid meal_timing")
-    
+
+    # Validate urgency_level
+    if body.urgency_level not in ["low", "medium", "high"]:
+        raise HTTPException(status_code=400, detail="Invalid urgency_level")
+
+    # Validate grace_period_minutes
+    if body.grace_period_minutes not in [30, 60, 120]:
+        raise HTTPException(status_code=400, detail="Invalid grace_period_minutes")
+
     # Validate days_of_week for weekly/selective
     if body.schedule_type in ["weekly", "selective"] and not body.days_of_week:
         raise HTTPException(status_code=400, detail="days_of_week required for weekly/selective schedules")
-    
+
     if body.days_of_week:
         for day in body.days_of_week:
             if not (0 <= day <= 6):
                 raise HTTPException(status_code=400, detail="days_of_week must be 0-6 (Sunday=0)")
-    
+
     schedule = MedicationSchedule(
-        patient_id=uuid.UUID(body.patient_id),
+        patient_id=patient_uuid,
         created_by=user_id,
         name=body.name,
         description=body.description,
@@ -155,9 +184,11 @@ def create_medication_schedule(
         meal_timing=body.meal_timing,
         dosage_type=body.dosage_type,
         dosage_count=body.dosage_count,
+        urgency_level=body.urgency_level,
+        grace_period_minutes=body.grace_period_minutes,
         is_active=body.is_active,
     )
-    
+
     db.add(schedule)
     db.commit()
     db.refresh(schedule)
@@ -179,46 +210,47 @@ def update_medication_schedule(
     schedule = db.query(MedicationSchedule).filter(MedicationSchedule.id == sid).first()
     if not schedule:
         raise HTTPException(status_code=404, detail="Medication schedule not found")
-    
-    # Check if user has access to this patient's schedules
-    user_id = uuid.UUID(current_user["userId"])
-    from app.models.relationship import Relationship
-    has_access = db.query(Relationship).filter(
-        (Relationship.related_user_id == user_id) &
-        (Relationship.patient_id == schedule.patient_id)
-    ).first()
-    
-    if not has_access:
+
+    if not _has_patient_access(db, current_user, schedule.patient_id):
         raise HTTPException(status_code=403, detail="Access denied")
-    
+
     # Validate schedule_type
     if body.schedule_type and body.schedule_type not in ["daily", "weekly", "selective"]:
         raise HTTPException(status_code=400, detail="Invalid schedule_type")
-    
+
     # Validate meal_timing
     if body.meal_timing and body.meal_timing not in ["before_meal", "after_meal", "with_meal"]:
         raise HTTPException(status_code=400, detail="Invalid meal_timing")
-    
+
+    # Validate urgency_level
+    if body.urgency_level and body.urgency_level not in ["low", "medium", "high"]:
+        raise HTTPException(status_code=400, detail="Invalid urgency_level")
+
+    # Validate grace_period_minutes
+    if body.grace_period_minutes is not None and body.grace_period_minutes not in [30, 60, 120]:
+        raise HTTPException(status_code=400, detail="Invalid grace_period_minutes")
+
     # Validate days_of_week for weekly/selective
     if body.schedule_type in ["weekly", "selective"] and body.days_of_week is not None and not body.days_of_week:
         raise HTTPException(status_code=400, detail="days_of_week required for weekly/selective schedules")
-    
+
     if body.days_of_week:
         for day in body.days_of_week:
             if not (0 <= day <= 6):
                 raise HTTPException(status_code=400, detail="days_of_week must be 0-6 (Sunday=0)")
-    
+
     # Update fields
     update_fields = [
         "name", "description", "prescription", "schedule_type", "scheduled_times",
-        "days_of_week", "meal_timing", "dosage_type", "dosage_count", "is_active"
+        "days_of_week", "meal_timing", "dosage_type", "dosage_count",
+        "urgency_level", "grace_period_minutes", "is_active"
     ]
-    
+
     for field in update_fields:
         value = getattr(body, field, None)
         if value is not None:
             setattr(schedule, field, value)
-    
+
     schedule.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(schedule)
@@ -239,18 +271,35 @@ def delete_medication_schedule(
     schedule = db.query(MedicationSchedule).filter(MedicationSchedule.id == sid).first()
     if not schedule:
         raise HTTPException(status_code=404, detail="Medication schedule not found")
-    
-    # Check if user has access to this patient's schedules
-    user_id = uuid.UUID(current_user["userId"])
-    from app.models.relationship import Relationship
-    has_access = db.query(Relationship).filter(
-        (Relationship.related_user_id == user_id) &
-        (Relationship.patient_id == schedule.patient_id)
-    ).first()
-    
-    if not has_access:
+
+    if not _has_patient_access(db, current_user, schedule.patient_id):
         raise HTTPException(status_code=403, detail="Access denied")
-    
+
     db.delete(schedule)
     db.commit()
     return {"success": True}
+
+
+@router.patch("/{schedule_id}/toggle-active")
+def toggle_medication_schedule_active(
+    schedule_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        sid = uuid.UUID(schedule_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid schedule ID")
+
+    schedule = db.query(MedicationSchedule).filter(MedicationSchedule.id == sid).first()
+    if not schedule:
+        raise HTTPException(status_code=404, detail="Medication schedule not found")
+
+    if not _has_patient_access(db, current_user, schedule.patient_id):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    schedule.is_active = not bool(schedule.is_active)
+    schedule.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(schedule)
+    return {"success": True, "is_active": schedule.is_active}

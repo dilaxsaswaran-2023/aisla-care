@@ -1,6 +1,7 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -18,6 +19,8 @@ type ScheduleForm = {
   meal_timing: string;
   dosage_type: string;
   dosage_count: number;
+  urgency_level: string;
+  grace_period_minutes: number;
   is_active: boolean;
 };
 
@@ -31,6 +34,8 @@ type Props = {
   removeTimeSlot: (index: number) => void;
   toggleDayOfWeek: (day: number) => void;
   handleAddSchedule: () => Promise<void>;
+  isEditing?: boolean;
+  submitLabel?: string;
 };
 
 const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -45,6 +50,8 @@ const MedicationScheduleDialog: React.FC<Props> = ({
   removeTimeSlot,
   toggleDayOfWeek,
   handleAddSchedule,
+  isEditing = false,
+  submitLabel,
 }) => {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -56,8 +63,13 @@ const MedicationScheduleDialog: React.FC<Props> = ({
 
       <DialogContent className="max-w-2xl max-h-[80vh] p-0 flex flex-col">
         <DialogHeader className="sticky top-0 bg-background z-10 p-4 border-b">
-          <DialogTitle>Add Medication Schedule</DialogTitle>
-        </DialogHeader>
+            <div className="flex items-start justify-between">
+              <DialogTitle>{submitLabel ? 'Edit Medication Schedule' : 'Add Medication Schedule'}</DialogTitle>
+              <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)} aria-label="Close">
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+          </DialogHeader>
 
         <div className="overflow-y-auto p-4 flex-1 space-y-4">
           <div>
@@ -198,6 +210,42 @@ const MedicationScheduleDialog: React.FC<Props> = ({
             </div>
           </div>
 
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>Urgency Level</Label>
+              <Select
+                value={scheduleForm.urgency_level}
+                onValueChange={(value) => setScheduleForm(prev => ({ ...prev, urgency_level: value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select urgency" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="low">Low</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="high">High</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label>Grace Period</Label>
+              <Select
+                value={String(scheduleForm.grace_period_minutes)}
+                onValueChange={(value) => setScheduleForm(prev => ({ ...prev, grace_period_minutes: parseInt(value, 10) }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select period" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="30">30 minutes</SelectItem>
+                  <SelectItem value="60">1 hour</SelectItem>
+                  <SelectItem value="120">2 hours</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
           <div className="flex items-center space-x-2">
             <Switch
               checked={scheduleForm.is_active}
@@ -207,11 +255,11 @@ const MedicationScheduleDialog: React.FC<Props> = ({
           </div>
         </div>
 
-        <div className="p-4 border-t flex gap-2">
-          <Button onClick={handleAddSchedule} className="flex-1">
-            Add Schedule
+        <div className="p-4 border-t flex gap-2 justify-end">
+          <Button onClick={handleAddSchedule} size="sm">
+            {submitLabel || (isEditing ? 'Save Changes' : 'Add Schedule')}
           </Button>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={() => onOpenChange(false)} size="sm">
             Cancel
           </Button>
         </div>
