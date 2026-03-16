@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.models.user import User
 from app.models.patient_location import PatientCurrentLocation
 from app.services.monitor.schemas import MonitorEvent
+from app.utils.geofence import is_point_in_polygon
 
 logger = logging.getLogger("monitor.geofence")
 
@@ -46,16 +47,25 @@ def check_geofence(event: MonitorEvent, db: Session) -> list:
         logger.info(f"[GEOFENCE] patient {patient_id} not found")
         return []
 
-    if not user.is_geofencing or not user.location_boundary or user.boundary_radius is None:
+    if not user.is_geofencing or not user.location_boundary:
         logger.info(f"[GEOFENCE] geofencing not configured for patient={patient_id}")
         return []
 
-    boundary = user.location_boundary  # {"latitude": float, "longitude": float}
-    fence = {
-        "home_lat": boundary["latitude"],
-        "home_lng": boundary["longitude"],
-        "radius_meters": user.boundary_radius,
-    }
+    boundary = user.location_boundary
+    polygon_points = boundary.get("points") if isinstance(boundary, dict) else None
+    has_polygon = isinstance(polygon_points, list) and len(polygon_points) >= 3
+
+    fence = None
+    if not has_polygon:
+        if boundary.get("latitude") is None or boundary.get("longitude") is None or user.boundary_radius is None:
+            logger.info(f"[GEOFENCE] invalid circular config for patient={patient_id}")
+            return []
+
+        fence = {
+            "home_lat": boundary["latitude"],
+            "home_lng": boundary["longitude"],
+            "radius_meters": user.boundary_radius,
+        }
 
     # ── Resolve current patient location ─────────────────────────────────────
     if event.lat is not None and event.lng is not None:
@@ -74,19 +84,29 @@ def check_geofence(event: MonitorEvent, db: Session) -> list:
         current_lng = loc_row.lng
         captured_at = loc_row.captured_at.isoformat() if loc_row.captured_at else None
 
-    # ── Calculate distance ────────────────────────────────────────────────────
-    distance = haversine_meters(
-        current_lat, current_lng,
-        fence["home_lat"], fence["home_lng"],
-    )
-    logger.info(
-        f"[GEOFENCE] patient={patient_id} distance={distance:.2f}m "
-        f"radius={fence['radius_meters']}m"
-    )
+    if has_polygon:
+        inside = is_point_in_polygon(current_lat, current_lng, polygon_points)
+        logger.info(
+            f"[GEOFENCE] patient={patient_id} boundary=polygon points={len(polygon_points)} inside={inside}"
+        )
+        if inside:
+            logger.info(f"[GEOFENCE] inside polygon patient={patient_id}")
+            return []
+        distance = None
+    else:
+        # ── Calculate distance for circle geofence ───────────────────────────
+        distance = haversine_meters(
+            current_lat, current_lng,
+            fence["home_lat"], fence["home_lng"],
+        )
+        logger.info(
+            f"[GEOFENCE] patient={patient_id} distance={distance:.2f}m "
+            f"radius={fence['radius_meters']}m"
+        )
 
-    if distance <= fence["radius_meters"]:
-        logger.info(f"[GEOFENCE] inside boundary patient={patient_id}")
-        return []
+        if distance <= fence["radius_meters"]:
+            logger.info(f"[GEOFENCE] inside boundary patient={patient_id}")
+            return []
 
     # ── Outside fence — apply cooldown ────────────────────────────────────────
     now = datetime.utcnow()
@@ -113,7 +133,8 @@ def check_geofence(event: MonitorEvent, db: Session) -> list:
         "reason": "Patient outside home boundary",
         "context": {
             "stay_home": False,
-            "distance_meters": round(distance, 2),
+            "distance_meters": round(distance, 2) if distance is not None else None,
+            "boundary_type": "polygon" if has_polygon else "circle",
             "captured_at": captured_at,
         },
     }]
