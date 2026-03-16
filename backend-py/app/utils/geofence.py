@@ -1,6 +1,6 @@
 """Geofencing utility functions for patient monitoring."""
 from math import radians, cos, sin, asin, sqrt
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List, Dict
 from datetime import datetime, timedelta
 
 
@@ -52,6 +52,50 @@ def is_within_boundary(
     distance = haversine_distance(current_lat, current_lon, boundary_lat, boundary_lon)
     # Add accuracy buffer for more accurate boundary checking
     return distance <= (boundary_radius_meters + accuracy_meters)
+
+
+def is_point_in_polygon(
+    current_lat: float,
+    current_lon: float,
+    polygon_points: List[Dict[str, float]],
+) -> bool:
+    """
+    Check if a location is inside a polygon geofence using ray casting.
+
+    Args:
+        current_lat, current_lon: Patient's current location
+        polygon_points: List of points as {"latitude": float, "longitude": float}
+
+    Returns:
+        True if point is inside the polygon, False otherwise.
+    """
+    if not polygon_points or len(polygon_points) < 3:
+        return False
+
+    # Use longitude as x and latitude as y for 2D point-in-polygon checks.
+    x = current_lon
+    y = current_lat
+    inside = False
+
+    j = len(polygon_points) - 1
+    for i in range(len(polygon_points)):
+        pi = polygon_points[i]
+        pj = polygon_points[j]
+
+        xi = float(pi.get("longitude"))
+        yi = float(pi.get("latitude"))
+        xj = float(pj.get("longitude"))
+        yj = float(pj.get("latitude"))
+
+        intersects = ((yi > y) != (yj > y)) and (
+            x < (xj - xi) * (y - yi) / ((yj - yi) or 1e-12) + xi
+        )
+        if intersects:
+            inside = not inside
+
+        j = i
+
+    return inside
 
 
 def evaluate_geofence_state(
