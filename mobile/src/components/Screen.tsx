@@ -40,8 +40,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   title: {
+    fontFamily: 'Poppins-ExtraBold',
     fontSize: 30,
-    fontWeight: '800',
     color: colors.text,
   },
   subtitle: {

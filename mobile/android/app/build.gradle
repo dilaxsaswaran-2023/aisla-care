@@ -68,6 +68,15 @@ def enableProguardInReleaseBuilds = false
  * this variant is about 6MiB larger per architecture than default.
  */
 def jscFlavor = 'org.webkit:android-jsc:+'
+def releaseStoreFile = (project.findProperty('MYAPP_RELEASE_STORE_FILE') ?: '').toString().trim()
+def releaseStorePassword = (project.findProperty('MYAPP_RELEASE_STORE_PASSWORD') ?: '').toString().trim()
+def releaseKeyAlias = (project.findProperty('MYAPP_RELEASE_KEY_ALIAS') ?: '').toString().trim()
+def releaseKeyPassword = (project.findProperty('MYAPP_RELEASE_KEY_PASSWORD') ?: '').toString().trim()
+def hasReleaseSigning =
+    releaseStoreFile &&
+    releaseStorePassword &&
+    releaseKeyAlias &&
+    releaseKeyPassword
 
 android {
     ndkVersion rootProject.ext.ndkVersion
@@ -83,6 +92,14 @@ android {
         versionName "1.0"
     }
     signingConfigs {
+        release {
+            if (hasReleaseSigning) {
+                storeFile file(releaseStoreFile)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
+        }
         debug {
             storeFile file('debug.keystore')
             storePassword 'android'
@@ -95,9 +112,9 @@ android {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            // Mirror the polar-mobile pattern: use a real release keystore when
+            // properties are configured, otherwise fall back to the debug key.
+            signingConfig hasReleaseSigning ? signingConfigs.release : signingConfigs.debug
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }
@@ -116,3 +133,4 @@ dependencies {
 }
 
 apply from: file("../../node_modules/@react-native-community/cli-platform-android/native_modules.gradle"); applyNativeModulesAppBuildGradle(project)
+apply from: file("../../node_modules/react-native-vector-icons/fonts.gradle")
