@@ -116,12 +116,12 @@ def create_budii_alert(
     alert = PatientAlert(
         patient_id=patient_id,
         event_id=str(uuid.uuid4()),
-        case=body.case,
-        alert_type=body.alert_type,
-        title=body.title,
-        message=body.message or "",
-        status=body.status,
-        source=body.source,
+        # case=body.case,
+        alert_type=body.case,
+        # title=body.title,
+        # message=body.message or "",
+        # status=body.status,
+        # source=body.source,
     )
     db.add(alert)
     db.commit()

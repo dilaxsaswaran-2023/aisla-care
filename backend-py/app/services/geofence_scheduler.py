@@ -7,8 +7,6 @@ import uuid
 from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from sqlalchemy.orm import Session
-
 from app.database import SessionLocal
 from app.models.user import User
 from app.models.patient_location import PatientCurrentLocation
@@ -34,8 +32,6 @@ def run_geofence_check_for_all_patients():
     db = None
     try:
         db = SessionLocal()
-        
-        # Query all patients with geofencing enabled
         patients = (
             db.query(User)
             .filter(
@@ -44,22 +40,16 @@ def run_geofence_check_for_all_patients():
             )
             .all()
         )
-        
         if not patients:
             return
-        
         for patient in patients:
-            # Get patient's current location
             location = (
                 db.query(PatientCurrentLocation)
                 .filter(PatientCurrentLocation.patient_id == patient.id)
                 .first()
             )
-            
             if location is None:
                 continue
-            
-            # Create a MonitorEvent from the patient's current location
             event = MonitorEvent(
                 event_id=str(uuid.uuid4()),
                 patient_id=str(patient.id),
@@ -68,27 +58,29 @@ def run_geofence_check_for_all_patients():
                 lng=location.lng,
                 sos_triggered=False,
             )
-            
-            # Run geofence check
             rules = check_geofence(event, db)
-            
             if not rules:
                 continue
-            
-            # Process triggered rules
             for rule in rules:
-                if rule["case"] == "GEOFENCE_BREACH":
-                    # Create breach record first
+                try:
+                    logger.info(f"[GEOFENCE_SCHEDULER] Rule triggered for patient {patient.id}: {rule}")
+
+                    if rule["case"] != "GEOFENCE_BREACH":
+                        continue
+
+                    logger.info("[GEOFENCE_SCHEDULER] Step 1 - creating breach")
                     breach = GeofenceBreachEvent(
                         patient_id=patient.id,
                         latitude=location.lat,
                         longitude=location.lng,
-                        distance_meters=rule["context"].get("distance_meters"),
+                        distance_meters=rule.get("context", {}).get("distance_meters"),
                         breached_at=datetime.utcnow(),
                     )
                     db.add(breach)
-                    db.flush()   # now breach.id is available
-                    # Create main Alert (frontend-visible)
+                    db.flush()
+                    logger.info(f"[GEOFENCE_SCHEDULER] Step 1 OK - breach.id={breach.id}")
+
+                    logger.info("[GEOFENCE_SCHEDULER] Step 2 - creating alert")
                     alert = Alert(
                         patient_id=patient.id,
                         alert_type="geofence",
@@ -102,36 +94,45 @@ def run_geofence_check_for_all_patients():
                     )
                     db.add(alert)
                     db.flush()
-                    create_alert_relationships(db, alert.id, patient.id)
+                    logger.info(f"[GEOFENCE_SCHEDULER] Step 2 OK - alert.id={alert.id}")
 
-                    # PatientAlert uses breach.id as event_id
+                    logger.info("[GEOFENCE_SCHEDULER] Step 3 - creating alert relationships")
+                    create_alert_relationships(db, alert.id, patient.id)
+                    logger.info("[GEOFENCE_SCHEDULER] Step 3 OK")
+
+                    logger.info("[GEOFENCE_SCHEDULER] Step 4 - creating patient_alert")
                     patient_alert = PatientAlert(
                         patient_id=patient.id,
-                        event_id=str(breach.id),   # same value as breach table primary key
-                        case=rule["case"],
-                        alert_type="geofence",
-                        title=rule.get("reason", "Geofence breach"),
-                        message=rule.get("reason", ""),
-                        status="active",
-                        source="scheduler",
-                        is_added_to_emergency=True,
+                        event_id=str(breach.id),
+                        alert_type=rule["case"],
                     )
                     db.add(patient_alert)
                     db.flush()
-                    create_budii_alert_relationships(db, patient_alert.id, patient.id)
+                    logger.info(f"[GEOFENCE_SCHEDULER] Step 4 OK - patient_alert.id={patient_alert.id}")
 
+                    logger.info("[GEOFENCE_SCHEDULER] Step 5 - creating budii alert relationships")
+                    create_budii_alert_relationships(db, patient_alert.id, patient.id)
+                    logger.info("[GEOFENCE_SCHEDULER] Step 5 OK")
+
+                    logger.info("[GEOFENCE_SCHEDULER] Step 6 - commit")
                     db.commit()
+                    logger.info("[GEOFENCE_SCHEDULER] Step 6 OK - commit success")
+
                     db.refresh(patient_alert)
 
-                    # Push to Firebase for real-time frontend listeners
                     pa_dict = patient_alert.to_dict()
                     patient_user = db.query(User).filter(User.id == patient.id).first()
                     pa_dict["patient_name"] = patient_user.full_name if patient_user else "Unknown"
                     push_patient_alert(pa_dict)
 
                     logger.info(f"[GEOFENCE_SCHEDULER] Created geofence breach alert for patient {patient.id}")
-    
-    except Exception:
+
+                except Exception as e:
+                    logger.exception(f"[GEOFENCE_SCHEDULER] FAILED for patient {patient.id}: {e}")
+                    db.rollback()
+
+    except Exception as e:
+        logger.exception(f"[GEOFENCE_SCHEDULER] Outer failure: {e}")
         if db:
             db.rollback()
     finally:
@@ -144,17 +145,16 @@ def start_scheduler():
     if scheduler.running:
         logger.info("[GEOFENCE_SCHEDULER] Scheduler already running")
         return
-    
-    # Add job: run geofence check every 300 seconds
+
     scheduler.add_job(
         run_geofence_check_for_all_patients,
         "interval",
-        seconds=300,
+        seconds=30,
         id="geofence_check",
         name="Geofence Check Every 5 Minutes",
         replace_existing=True,
     )
-    
+
     scheduler.start()
     logger.info("[GEOFENCE_SCHEDULER] Started - runs every 300 seconds")
 
