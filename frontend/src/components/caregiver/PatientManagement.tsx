@@ -21,7 +21,7 @@ interface Patient {
   email: string;
   role: string;
   is_geofencing?: boolean;
-  location_boundary?: { latitude: number; longitude: number };
+  location_boundary?: any;
   boundary_radius?: number;
 }
 
@@ -51,7 +51,7 @@ export const PatientManagement = () => {
     is_geofencing: false,
     latitude: 0,
     longitude: 0,
-    radius: 10,
+    points: [] as Array<{ latitude: number; longitude: number }>,
   });
   const [userPatients, setUserPatients] = useState<DropdownUser[]>([]);
   const [patientSearch, setPatientSearch] = useState('');
@@ -194,16 +194,25 @@ export const PatientManagement = () => {
   const handleSaveGeofence = async () => {
     if (!geofencePatient) return;
 
+    if (geofenceForm.is_geofencing && (!Array.isArray(geofenceForm.points) || geofenceForm.points.length < 3)) {
+      toast({
+        title: 'Boundary incomplete',
+        description: 'Please add at least 3 points to form a polygon boundary',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setGeofenceLoading(true);
     try {
       await api.post('/geofence/setup', {
         patient_id: geofencePatient.id,
         is_geofencing: geofenceForm.is_geofencing,
         location_boundary: {
-          latitude: geofenceForm.latitude,
-          longitude: geofenceForm.longitude,
+          type: 'polygon',
+          points: geofenceForm.points,
         },
-        boundary_radius: geofenceForm.radius,
+        boundary_radius: null,
       });
 
       toast({
@@ -434,11 +443,18 @@ export const PatientManagement = () => {
                     className="gap-1.5 h-8"
                     onClick={() => {
                       setGeofencePatient(patient);
+                      const existingPoints = Array.isArray(patient.location_boundary?.points)
+                        ? patient.location_boundary.points
+                        : [];
+
+                      const latitude = patient.location_boundary?.latitude || existingPoints[0]?.latitude || 0;
+                      const longitude = patient.location_boundary?.longitude || existingPoints[0]?.longitude || 0;
+
                       setGeofenceForm({
                         is_geofencing: patient.is_geofencing || false,
-                        latitude: patient.location_boundary?.latitude || 0,
-                        longitude: patient.location_boundary?.longitude || 0,
-                        radius: patient.boundary_radius || 10,
+                        latitude,
+                        longitude,
+                        points: existingPoints,
                       });
                       setGeofenceDialogOpen(true);
                     }}

@@ -191,8 +191,44 @@ def sos_alert(
     # Create alert relationships for all caregivers and family members
     relationships = create_alert_relationships(db, alert.id, user_id)
 
-    # Publish SOS event to agent (port 8000) for processing
-    publish_sos_to_agent(str(alert.id), str(user_id), body.voice_transcription)
+    # Run SOS check to determine if it's SOS_TRIGGER or SOS_REPEAT
+    sos_rules = check_sos_direct(alert, db, user_id)
+
+    # If SOS_REPEAT → create PatientAlert, mark alert as emergency, push to Firebase
+    sos_case = sos_rules[0]["case"] if sos_rules else None
+    if sos_case == "SOS_REPEAT":
+        alert.is_added_to_emergency = True
+        db.add(alert)
+
+        patient_alert = PatientAlert(
+            patient_id=user_id,
+            event_id=str(alert.id),
+            alert_type="SOS_REPEAT",
+        )
+        db.add(patient_alert)
+        db.flush()
+        create_budii_alert_relationships(db, patient_alert.id, user_id)
+        db.commit()
+        db.refresh(patient_alert)
+
+        # Push to Firebase
+        pa_dict = patient_alert.to_dict()
+        patient_user = db.query(User).filter(User.id == user_id).first()
+        pa_dict["patient_name"] = patient_user.full_name if patient_user else "Unknown"
+        push_patient_alert(pa_dict)
+
+    # Emit socket event if available
+    sio = getattr(request.app.state, "sio", None)
+    if sio and sos_rules:
+        try:
+            await sio.emit("new_alert", {
+                "patient_id": str(user_id),
+                "alert_id": str(alert.id),
+                "alert_type": "sos",
+                "sos_rules": sos_rules,
+            })
+        except Exception as exc:
+            logger.warning(f"[SOS] socket emit failed: {exc}")
 
     # Build response with alert and relationships
     response = alert.to_dict()

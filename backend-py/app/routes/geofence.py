@@ -8,7 +8,7 @@ from app.database import get_db
 from app.auth import get_current_user
 from app.models.user import User
 from app.models.alert import Alert
-from app.utils.geofence import haversine_distance, evaluate_geofence_state
+from app.utils.geofence import haversine_distance, evaluate_geofence_state, is_point_in_polygon
 
 
 router = APIRouter(prefix="/api/geofence", tags=["geofence"])
@@ -65,11 +65,37 @@ def setup_geofence(
     # Update patient geofence settings
     patient.is_geofencing = is_geofencing
     if is_geofencing:
-        if not location_boundary or not boundary_radius:
-            raise HTTPException(status_code=400, detail="location_boundary and boundary_radius required when enabling geofencing")
-        
-        patient.location_boundary = location_boundary
-        patient.boundary_radius = boundary_radius
+        if not location_boundary:
+            raise HTTPException(status_code=400, detail="location_boundary is required when enabling geofencing")
+
+        polygon_points = location_boundary.get("points") if isinstance(location_boundary, dict) else None
+        has_polygon = isinstance(polygon_points, list) and len(polygon_points) >= 3
+        has_circle = (
+            isinstance(location_boundary, dict)
+            and location_boundary.get("latitude") is not None
+            and location_boundary.get("longitude") is not None
+            and boundary_radius is not None
+        )
+
+        if not has_polygon and not has_circle:
+            raise HTTPException(
+                status_code=400,
+                detail="Provide polygon points (>=3) or latitude/longitude with boundary_radius",
+            )
+
+        if has_polygon:
+            patient.location_boundary = {
+                "type": "polygon",
+                "points": polygon_points,
+            }
+            patient.boundary_radius = None
+        else:
+            patient.location_boundary = {
+                "latitude": location_boundary.get("latitude"),
+                "longitude": location_boundary.get("longitude"),
+            }
+            patient.boundary_radius = boundary_radius
+
         patient.geofence_state = "inside"
         patient.geofence_outside_count = 0
     
@@ -112,24 +138,45 @@ def check_location(
     if not patient or patient.role != "patient":
         raise HTTPException(status_code=400, detail="Only patients can send location")
     
-    if not patient.is_geofencing or not patient.location_boundary or not patient.boundary_radius:
+    if not patient.is_geofencing or not patient.location_boundary:
         # Geofencing not enabled
         return {"status": "geofencing_disabled", "alert_sent": False}
-    
-    # Evaluate geofence state
-    boundary_lat = patient.location_boundary["latitude"]
-    boundary_lon = patient.location_boundary["longitude"]
-    
-    new_state, count, should_alert, should_re_enter = evaluate_geofence_state(
-        current_lat=latitude,
-        current_lon=longitude,
-        boundary_lat=boundary_lat,
-        boundary_lon=boundary_lon,
-        boundary_radius_meters=patient.boundary_radius,
-        accuracy_meters=accuracy,
-        previous_state=patient.geofence_state,
-        outside_sample_count=patient.geofence_outside_count,
-    )
+
+    boundary = patient.location_boundary
+    polygon_points = boundary.get("points") if isinstance(boundary, dict) else None
+    has_polygon = isinstance(polygon_points, list) and len(polygon_points) >= 3
+
+    if has_polygon:
+        inside = is_point_in_polygon(latitude, longitude, polygon_points)
+
+        if inside:
+            should_re_enter = patient.geofence_state == "outside_confirmed"
+            new_state, count, should_alert = "inside", 0, False
+        else:
+            count = (patient.geofence_outside_count or 0) + 1
+            should_alert = count >= 3 and patient.geofence_state != "outside_confirmed"
+            new_state = "outside_confirmed" if count >= 3 else "outside_candidate"
+            should_re_enter = False
+
+        distance = None
+    else:
+        if boundary.get("latitude") is None or boundary.get("longitude") is None or patient.boundary_radius is None:
+            return {"status": "geofencing_disabled", "alert_sent": False}
+
+        boundary_lat = boundary["latitude"]
+        boundary_lon = boundary["longitude"]
+
+        new_state, count, should_alert, should_re_enter = evaluate_geofence_state(
+            current_lat=latitude,
+            current_lon=longitude,
+            boundary_lat=boundary_lat,
+            boundary_lon=boundary_lon,
+            boundary_radius_meters=patient.boundary_radius,
+            accuracy_meters=accuracy,
+            previous_state=patient.geofence_state,
+            outside_sample_count=patient.geofence_outside_count,
+        )
+        distance = haversine_distance(latitude, longitude, boundary_lat, boundary_lon)
     
     # Update patient geofence tracking
     patient.geofence_state = new_state
@@ -174,12 +221,11 @@ def check_location(
     
     db.commit()
     
-    distance = haversine_distance(latitude, longitude, boundary_lat, boundary_lon)
-    
     return {
         "status": new_state,
-        "distance_meters": round(distance, 2),
+        "distance_meters": round(distance, 2) if distance is not None else None,
         "boundary_radius_meters": patient.boundary_radius,
+        "boundary_type": "polygon" if has_polygon else "circle",
         "alert_sent": alert_sent,
         "alert_type": alert_type,
     }

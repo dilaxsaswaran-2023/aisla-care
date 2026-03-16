@@ -51,14 +51,15 @@ async def receive_budii_alert(payload: BudiiAlertPayload, request: Request):
     sio = request.app.state.sio
 
     for action in payload.actions:
-        alert_data = {
-            "patient_id": payload.patient_id,
-            "event_id": payload.event_id,
-            "type": action.action,
-            "title": action.case.replace("_", " ").title(),
-            "message": action.reason or "Budii generated alert",
-            "status": "active",
-        }
+        new_alert = PatientAlert(
+            patient_id=payload.patient_id,
+            event_id=payload.event_id,
+            alert_type=action.case,
+            
+        )
+        if action.case != "SOS_TRIGGER":    
+            db.add(new_alert)
+            db.flush()
 
         created_alerts.append(alert_data)
         await sio.emit("new_alert", alert_data)
