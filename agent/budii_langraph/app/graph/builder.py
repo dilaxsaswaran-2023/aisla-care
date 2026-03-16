@@ -4,7 +4,7 @@ from graph.state import GraphState
 from graph.nodes.ingest import ingest_event
 from graph.nodes.load_patient_config import load_patient_config
 from graph.nodes.check_sos import check_sos
-from graph.nodes.check_geofence import check_geofence
+# from graph.nodes.check_geofence import check_geofence
 from graph.nodes.check_medication import check_medication
 from graph.nodes.check_inactivity import check_inactivity
 from graph.nodes.aggregate_results import aggregate_results
@@ -16,7 +16,7 @@ def parallel_router(state: GraphState):
     # returning a list makes these nodes run in parallel
     return [
         "check_sos",
-        "check_geofence",
+        # "check_geofence",
         "check_medication",
         "check_inactivity",
     ]
@@ -28,7 +28,7 @@ def build_graph():
     graph.add_node("ingest_event", ingest_event)
     graph.add_node("load_patient_config", load_patient_config)
     graph.add_node("check_sos", check_sos)
-    graph.add_node("check_geofence", check_geofence)
+    # graph.add_node("check_geofence", check_geofence)
     graph.add_node("check_medication", check_medication)
     graph.add_node("check_inactivity", check_inactivity)
     graph.add_node("aggregate_results", aggregate_results)
@@ -44,7 +44,7 @@ def build_graph():
     parallel_router,
     [
         "check_sos",
-        "check_geofence",
+        # "check_geofence",
         "check_medication",
         "check_inactivity",
     ]
@@ -56,7 +56,7 @@ def build_graph():
     #     "aggregate_results"
     # )
     graph.add_edge("check_sos", "aggregate_results")
-    graph.add_edge("check_geofence", "aggregate_results")
+    # graph.add_edge("check_geofence", "aggregate_results")
     graph.add_edge("check_medication", "aggregate_results")
     graph.add_edge("check_inactivity", "aggregate_results")
     graph.add_edge("aggregate_results", "create_actions")
