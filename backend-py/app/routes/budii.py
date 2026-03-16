@@ -62,12 +62,13 @@ async def receive_budii_alert(
         new_alert = PatientAlert(
             patient_id=payload.patient_id,
             event_id=payload.event_id,
-            case=action.case,
-            alert_type=action.action,
-            title=action.case.replace("_", " ").title(),
-            message=action.reason or "Budii generated alert",
-            status="active",
-            source="budii",
+            # case=action.case,
+            alert_type=action.case,
+            # title=action.case.replace("_", " ").title(),
+            # message=action.reason or "Budii generated alert",
+            # status="active",
+            # source="budii",
+            
         )
         if action.case != "SOS_TRIGGER":    
             db.add(new_alert)
