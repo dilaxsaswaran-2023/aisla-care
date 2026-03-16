@@ -335,12 +335,7 @@ async def sos_alert(
         patient_alert = PatientAlert(
             patient_id=user_id,
             event_id=str(alert.id),
-            # case="SOS_REPEAT",
             alert_type="SOS_REPEAT",
-            # title="Repeated SOS within 8 minutes",
-            # message=sos_rules[0].get("reason", ""),
-            # status="active",
-            # source="monitor",
         )
         db.add(patient_alert)
         db.flush()
