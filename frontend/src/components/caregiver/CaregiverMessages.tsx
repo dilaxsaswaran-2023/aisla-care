@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Users, Heart, MessageSquare, RefreshCw, Plus } from "lucide-react";
+import { Users, Heart, MessageSquare, RefreshCw, Plus, User } from "lucide-react";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import ChatInterface from "@/components/chat/ChatInterface";
 import { ToastAction } from "@/components/ui/toast";
 import { useAuth } from "@/contexts/AuthContext";
@@ -17,6 +18,7 @@ interface Contact {
   id: string;
   name: string;
   role?: string;
+  avatar_url?: string | null;
   patient_name?: string | null;
 }
 
@@ -145,6 +147,7 @@ export const CaregiverMessages = ({
         id: conv.partner_id,
         name: conv.partner_name || fallbackContact?.name || "Unknown",
         role: fallbackContact?.role,
+        avatar_url: fallbackContact?.avatar_url || null,
         patient_name: fallbackContact?.patient_name,
       };
     });
@@ -259,8 +262,22 @@ export const CaregiverMessages = ({
                     const unreadCount = Math.max(conv?.unread_count ?? 0, unreadBySender[contact.id] ?? 0);
                     return (
                       <button key={contact.id} onClick={() => handleSelectContact(contact)}
-                        className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-left transition-colors ${selectedContact?.id === contact.id ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}>
-                        {contact.role === "family" ? <Heart className="w-4 h-4 shrink-0" /> : <Users className="w-4 h-4 shrink-0" />}
+                        className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-lg border text-left transition-colors ${selectedContact?.id === contact.id ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}>
+                        <Avatar>
+                          {contact.avatar_url ? (
+                            <AvatarImage src={contact.avatar_url} alt={contact.name} />
+                          ) : (
+                            <AvatarFallback>
+                              {contact.role === "family" ? (
+                                <Users className="w-4 h-4" />
+                              ) : contact.role === "caregiver" ? (
+                                <User className="w-4 h-4" />
+                              ) : (
+                                <Heart className="w-4 h-4" />
+                              )}
+                            </AvatarFallback>
+                          )}
+                        </Avatar>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium truncate">{contact.name}</p>
                           {conv?.last_message && (
