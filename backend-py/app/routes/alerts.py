@@ -15,8 +15,10 @@ from app.models.user import User
 from app.auth import get_current_user
 from app.services.alert_relationship_service import create_alert_relationships
 from app.models.budii_alert import PatientAlert
+from app.models.sos_alert import SosAlert
 from app.services.budii_alert_relationship_service import create_budii_alert_relationships
 from app.services.firebase_helper import push_patient_alert
+from app.services.sos_priority_service import get_sos_priority
 
 logger = logging.getLogger("alerts.router")
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
@@ -53,7 +55,8 @@ def check_sos_direct(alert: Alert, db: Session, patient_id: uuid.UUID) -> list:
             "triggered": True,
             "case": "SOS_TRIGGER",
             "action": "SEND_CONFIRMATION",
-            "reason": "SOS triggered",
+            "reason": "SOS triggered",        
+            "voice_transcription": alert.voice_transcription,
         }]
     
     last_time = last_sos.created_at
@@ -70,6 +73,7 @@ def check_sos_direct(alert: Alert, db: Session, patient_id: uuid.UUID) -> list:
             "case": "SOS_REPEAT",
             "action": "START_EMERGENCY",
             "reason": "Repeated SOS within 8 minutes",
+            "voice_transcription": alert.voice_transcription,
         }]
     
     logger.info(f"[SOS] SOS_TRIGGER for patient {patient_id} - more than 8 minutes since last")
@@ -78,6 +82,7 @@ def check_sos_direct(alert: Alert, db: Session, patient_id: uuid.UUID) -> list:
         "case": "SOS_TRIGGER",
         "action": "SEND_CONFIRMATION",
         "reason": "SOS triggered",
+        "voice_transcription": alert.voice_transcription,
     }]
 
 
@@ -328,6 +333,19 @@ async def sos_alert(
 
     # If SOS_REPEAT → create PatientAlert, mark alert as emergency, push to Firebase
     sos_case = sos_rules[0]["case"] if sos_rules else None
+    if sos_case == "SOS_TRIGGER" or sos_case == "SOS_REPEAT":
+        sos_alert = SosAlert(
+            patient_id=user_id,
+            event_id=str(alert.id), 
+            alert_type="sos",   
+            message=sos_rules[0].get("voice_transcription", ""), 
+            priority = get_sos_priority(sos_rules[0].get("voice_transcription", "")) or "high"
+        )
+        
+        db.add(sos_alert)
+        db.commit()
+        db.refresh(sos_alert)
+
     if sos_case == "SOS_REPEAT":
         alert.is_added_to_emergency = True
         db.add(alert)
