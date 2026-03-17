@@ -29,6 +29,7 @@ interface User {
   caregiver_type?: string | null;
   caregiver_subtype?: string | null;
   caregiver_id?: string | null;
+  caregiver_ids?: string[] | null;
   corporate_id?: string | null;
   family_ids?: string[] | null;
   is_geofencing?: boolean | null;
@@ -88,8 +89,9 @@ export const UserManagement = () => {
     fullName: '',
     email: '',
     caregiverId: '',
+    caregiverIds: [] as string[],
     familyIds: [] as string[],
-    phone_country: '',
+    phone_country: '44',
     phone_number: '',
     caregiver_type: '',
     caregiver_subtype: '',
@@ -114,8 +116,9 @@ export const UserManagement = () => {
     fullName: '',
     role: 'caregiver',
     caregiverId: '',
+    caregiverIds: [] as string[],
     familyIds: [] as string[],
-    phone_country: '',
+    phone_country: '44',
     phone_number: '',
     caregiver_type: '',
     caregiver_subtype: '',
@@ -149,6 +152,7 @@ export const UserManagement = () => {
               role: u.role || null,
               status: u.status || null,
               caregiver_id: u.caregiver_id || null,
+              caregiver_ids: Array.isArray(u.caregiver_ids) ? u.caregiver_ids : null,
               family_ids: Array.isArray(u.family_ids) ? u.family_ids : null,
               patient_id: u.patient_id || null,
               phone_country: u.phone_country || null,
@@ -200,6 +204,7 @@ export const UserManagement = () => {
       fullName: formData.fullName,
       role: newRole,
       caregiverId: '',
+      caregiverIds: [],
       familyIds: [],
       phone_country: '',
       phone_number: '',
@@ -230,6 +235,7 @@ export const UserManagement = () => {
       fullName: user.full_name,
       email: user.email,
       caregiverId: user.caregiver_id || '',
+      caregiverIds: user.caregiver_ids || (user.caregiver_id ? [user.caregiver_id] : []),
       familyIds: user.family_ids || [],
       phone_country: (user as any).phone_country || '',
       phone_number: (user as any).phone_number || '',
@@ -286,6 +292,7 @@ export const UserManagement = () => {
         if (editFormData.caregiverId) {
           payload.caregiver_id = editFormData.caregiverId;
         }
+        payload.caregiver_ids = editFormData.caregiverIds;
         payload.family_ids = editFormData.familyIds;
       }
       
@@ -300,7 +307,7 @@ export const UserManagement = () => {
   };
 
   const selectCaregiver = (caregiver: DropdownUser) => {
-    setFormData({ ...formData, caregiverId: caregiver._id });
+    setFormData({ ...formData, caregiverId: caregiver._id, caregiverIds: [caregiver._id] });
     setShowCaregiverDropdown(false);
     setCaregiverSearch('');
   };
@@ -336,6 +343,10 @@ export const UserManagement = () => {
       }
 
       if (formData.role === 'patient') {
+        payload.caregiver_ids = formData.caregiverIds;
+      }
+
+      if (formData.role === 'patient') {
         payload.family_ids = formData.familyIds;
       }
 
@@ -348,8 +359,9 @@ export const UserManagement = () => {
         fullName: '',
         role: 'caregiver',
         caregiverId: '',
+        caregiverIds: [],
         familyIds: [],
-        phone_country: '',
+        phone_country: '44',
         phone_number: '',
         caregiver_type: '',
         caregiver_subtype: '',
@@ -367,6 +379,7 @@ export const UserManagement = () => {
       fullName: '',
       role: 'caregiver',
       caregiverId: '',
+      caregiverIds: [],
       familyIds: [],
       phone_country: '',
       phone_number: '',

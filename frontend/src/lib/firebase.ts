@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
-import { getAuth, signInAnonymously } from "firebase/auth";
+import { getAuth, onAuthStateChanged, signInAnonymously } from "firebase/auth";
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -15,11 +15,38 @@ const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 
 // Sign in anonymously for Firestore access
-const auth = getAuth(app);
-if (!auth.currentUser) {
-  signInAnonymously(auth).catch(() => {
-    // Silently handle auth errors
-  });
+export const auth = getAuth(app);
+
+let authReadyPromise: Promise<void> | null = null;
+
+export function ensureFirebaseAuthReady(): Promise<void> {
+  if (auth.currentUser) {
+    return Promise.resolve();
+  }
+
+  if (!authReadyPromise) {
+    authReadyPromise = new Promise((resolve) => {
+      const unsubscribe = onAuthStateChanged(auth, (user) => {
+        if (user) {
+          unsubscribe();
+          resolve();
+        }
+      });
+
+      signInAnonymously(auth)
+        .then(() => {
+          resolve();
+        })
+        .catch((err) => {
+          console.error("Firebase anonymous sign-in failed:", err);
+          resolve();
+        });
+    });
+  }
+
+  return authReadyPromise;
 }
+
+void ensureFirebaseAuthReady();
 
 export default app;

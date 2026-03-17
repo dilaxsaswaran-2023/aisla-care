@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Optional
 
 import aiofiles
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, Body
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, Body, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_, func
 
@@ -70,6 +70,7 @@ def get_conversations(
                 "partner_role": partner.role if partner else None,
                 "last_message": last_msg.to_dict(),
                 "unread_count": unread,
+                "unread": unread > 0,
             }
         )
 
@@ -81,6 +82,7 @@ def get_conversations(
 # ── POST /api/messages/upload-audio ─────────────────────────────────────────
 @router.post("/upload-audio", status_code=201)
 async def upload_audio(
+    request: Request,
     file: UploadFile = File(...),
     recipient_id: str = Form(...),
     current_user: dict = Depends(get_current_user),
@@ -118,7 +120,21 @@ async def upload_audio(
     db.add(message)
     db.commit()
     db.refresh(message)
-    return message.to_dict()
+    msg_dict = message.to_dict()
+
+    # Realtime fan-out for uploaded audio messages.
+    sio = getattr(request.app.state, "sio", None)
+    if sio:
+        sender_id = current_user["userId"]
+        await sio.emit("new_message", msg_dict, room=recipient_id)
+        await sio.emit("new_message", msg_dict, room=sender_id)
+        await sio.emit(
+            "message_status",
+            {"message_id": str(message.id), "status": message.status},
+            room=sender_id,
+        )
+
+    return msg_dict
 
 
 # ── GET /api/messages/search ─────────────────────────────────────────────────
@@ -193,6 +209,39 @@ def get_conversation(
         .all()
     )
     return [m.to_dict() for m in messages]
+
+
+# ── PUT /api/messages/{recipient_id}/read-all ───────────────────────────────
+@router.put("/{recipient_id}/read-all")
+def mark_conversation_read(
+    recipient_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    user_id = uuid.UUID(current_user["userId"])
+    partner_id = uuid.UUID(recipient_id)
+
+    unread_messages = (
+        db.query(Message)
+        .filter(
+            Message.sender_id == partner_id,
+            Message.recipient_id == user_id,
+            Message.status != "read",
+            Message.is_deleted == False,
+        )
+        .all()
+    )
+
+    now = datetime.utcnow()
+    updated_ids = []
+    for msg in unread_messages:
+        msg.status = "read"
+        msg.read_at = now
+        updated_ids.append(str(msg.id))
+
+    db.commit()
+
+    return {"success": True, "message_ids": updated_ids, "count": len(updated_ids)}
 
 
 # ── PUT /api/messages/{message_id}/read ──────────────────────────────────────

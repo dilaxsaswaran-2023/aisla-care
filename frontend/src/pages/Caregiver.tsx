@@ -20,10 +20,17 @@ import { useFirebaseAlerts } from "@/hooks/useFirebaseAlerts";
 
 interface Contact { id: string; name: string; }
 interface FamilyContact { id: string; name: string; patientName: string; }
+interface MessageContact {
+  id: string;
+  name: string;
+  role?: string;
+  patient_name?: string | null;
+}
 interface Conversation {
   partner_id: string;
   partner_name: string;
   unread_count: number;
+  unread?: boolean;
   last_message?: { content: string; message_type: string; created_at: string };
 }
 interface AlertItem {
@@ -60,6 +67,7 @@ const Caregiver = () => {
   const [activeTab, setActiveTab] = useState("overview");
   const [patients, setPatients] = useState<Contact[]>([]);
   const [familyMembers, setFamilyMembers] = useState<FamilyContact[]>([]);
+  const [messageContacts, setMessageContacts] = useState<MessageContact[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [budiiAlerts, setBudiiAlerts] = useState<AlertItem[]>([]);
@@ -74,7 +82,11 @@ const Caregiver = () => {
 
   const handleTabChange = (tab: string) => navigate(`?tab=${tab}`, { replace: true });
 
-  useEffect(() => { loadPatients(); loadAlerts(); }, [user]);
+  useEffect(() => {
+    loadPatients();
+    loadAlerts();
+    loadContacts();
+  }, [user]);
 
   const loadAlerts = async () => {
     setLoadingAlerts(true);
@@ -99,15 +111,32 @@ const Caregiver = () => {
     if (!user) return;
     setLoading(true);
     try {
-      const data = await api.get('/users/') as any;
-      if (data) {
-        const pats: Contact[] = data.map((p: any) => ({ id: p.id || p._id, name: p.full_name }));
-        setPatients(pats);
-      }
-      // Note: familyMembers not loaded from this endpoint
-      setFamilyMembers([]);
+      const data = await api.get('/users/patients') as any;
+      const pats: Contact[] = (data?.patients || []).map((p: any) => ({
+        id: p.id || p._id,
+        name: p.full_name,
+      }));
+
+      const fams: FamilyContact[] = (data?.familyMembers || []).map((f: any) => ({
+        id: f.id || f._id,
+        name: f.full_name,
+        patientName: f.patient_name || '',
+      }));
+
+      setPatients(pats);
+      setFamilyMembers(fams);
     } catch { /* non-critical */ }
     setLoading(false);
+  };
+
+  const loadContacts = async () => {
+    if (!user) return;
+    try {
+      const data = await api.get('/users/contacts') as MessageContact[];
+      setMessageContacts(data || []);
+    } catch {
+      setMessageContacts([]);
+    }
   };
 
   const loadConversations = useCallback(async () => {
@@ -151,7 +180,12 @@ const Caregiver = () => {
     }
   };
 
-  const onRefresh = () => { loadAlerts(); loadPatients(); };
+  const onRefresh = () => {
+    loadAlerts();
+    loadPatients();
+    loadContacts();
+    loadConversations();
+  };
 
   // Filter Firebase alert for banner display (only SOS and geofence breach)
   const firebaseEmergencyAlert = useMemo(() => {
@@ -232,8 +266,8 @@ const Caregiver = () => {
       {activeTab === "patients" && <CaregiverPatients isMobile={isMobile} />}
       {activeTab === "messages" && (
         <CaregiverMessages
-          patients={patients}
-          familyMembers={familyMembers}
+          contacts={messageContacts}
+          conversations={conversations}
           loading={loading}
           onLoadConversations={loadConversations}
         />

@@ -31,6 +31,7 @@ class User(Base):
     caregiver_type = Column(String, nullable=True)
     caregiver_subtype = Column(String, nullable=True)
     caregiver_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    caregiver_ids = Column(ARRAY(UUID(as_uuid=True)), nullable=True, default=[])
     corporate_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
 
     # Many-to-many family_ids stored as an array of UUIDs
@@ -62,6 +63,7 @@ class User(Base):
             "caregiver_type": self.caregiver_type,
             "caregiver_subtype": self.caregiver_subtype,
             "caregiver_id": str(self.caregiver_id) if self.caregiver_id else None,
+            "caregiver_ids": [str(cid) for cid in self.caregiver_ids] if self.caregiver_ids else [],
             "corporate_id": str(self.corporate_id) if self.corporate_id else None,
             "family_ids": [str(fid) for fid in self.family_ids] if self.family_ids else [],
             # Geofencing

@@ -7,21 +7,36 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Send, Mic, MicOff, Phone, Check, CheckCheck, Circle, Trash2, Square } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useSocket, ChatMessage } from '@/hooks/useSocket';
+import { createFirebaseChatNotification } from '@/hooks/useFirebaseChatNotifications';
 
 const API_BASE = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5030';
 
 interface ChatInterfaceProps {
   recipientId: string;
   recipientName: string;
+  maxMessageWidth?: string;
 }
 
 type RecordingState = 'idle' | 'recording' | 'uploading';
 
 const MessageStatus = ({ status, isSender }: { status: string; isSender: boolean }) => {
   if (!isSender) return null;
-  if (status === 'read') return <CheckCheck className="w-3 h-3 text-blue-400 inline ml-1" />;
-  if (status === 'delivered') return <CheckCheck className="w-3 h-3 opacity-60 inline ml-1" />;
-  return <Check className="w-3 h-3 opacity-60 inline ml-1" />;
+  let label = 'Sent';
+  let icon = <Check className="w-3 h-3 opacity-60" />;
+  if (status === 'delivered') {
+    label = 'Delivered';
+    icon = <CheckCheck className="w-3 h-3 opacity-60" />;
+  }
+  if (status === 'read') {
+    label = 'Read';
+    icon = <CheckCheck className="w-3 h-3 text-blue-400" />;
+  }
+  return (
+    <span className="flex items-center gap-1">
+      {icon}
+      <span className="text-xs font-semibold">{label}</span>
+    </span>
+  );
 };
 
 const AudioPlayer = ({ url, metadata }: { url: string; metadata?: Record<string, unknown> | null }) => {
@@ -36,12 +51,11 @@ const AudioPlayer = ({ url, metadata }: { url: string; metadata?: Record<string,
   );
 };
 
-const ChatInterface = ({ recipientId, recipientName }: ChatInterfaceProps) => {
+const ChatInterface = ({ recipientId, recipientName, maxMessageWidth = 'max-w-full' }: ChatInterfaceProps) => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
-  const [loading, setLoading] = useState(false);
   const [isRecipientOnline, setIsRecipientOnline] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [recordingState, setRecordingState] = useState<RecordingState>('idle');
@@ -105,7 +119,7 @@ const ChatInterface = ({ recipientId, recipientName }: ChatInterfaceProps) => {
     [recipientId]
   );
 
-  const { sendMessage, sendTypingStart, sendTypingStop, sendMarkRead } = useSocket({
+  const { sendMessage, sendTypingStart, sendTypingStop, sendMarkRead, getUserOnlineStatus } = useSocket({
     userId: user?.id || null,
     onNewMessage: handleNewMessage,
     onMessageStatus: handleMessageStatus,
@@ -121,6 +135,21 @@ const ChatInterface = ({ recipientId, recipientName }: ChatInterfaceProps) => {
     loadMessages();
   }, [user, recipientId]);
 
+  useEffect(() => {
+    if (!user) return;
+    let active = true;
+    getUserOnlineStatus(recipientId)
+      .then((online) => {
+        if (active) setIsRecipientOnline(online);
+      })
+      .catch(() => {
+        if (active) setIsRecipientOnline(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [user, recipientId, getUserOnlineStatus]);
+
   // ── Auto-scroll ──────────────────────────────────────────────────────────
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -129,53 +158,60 @@ const ChatInterface = ({ recipientId, recipientName }: ChatInterfaceProps) => {
   // ── Mark incoming messages as read when conversation is open ─────────────
   useEffect(() => {
     if (!user || messages.length === 0) return;
-    const unread = messages
+    const unreadIds = messages
       .filter((m) => m.sender_id === recipientId && m.status !== 'read')
       .map((m) => m.id);
-    if (unread.length > 0) {
-      sendMarkRead(unread, user.id, recipientId);
-      // Also persist via REST
-      unread.forEach((id) => api.put(`/messages/${id}/read`).catch(() => {}));
-    }
-  }, [messages, user, recipientId]);
+
+    if (unreadIds.length === 0) return;
+
+    // Update local state first to prevent repeated read API calls on re-render.
+    setMessages((prev) =>
+      prev.map((m) => (unreadIds.includes(m.id) ? { ...m, status: 'read' } : m))
+    );
+
+    // Realtime status back to sender.
+    sendMarkRead(unreadIds, user.id, recipientId);
+
+    // Persist read state in one request.
+    api.put(`/messages/${recipientId}/read-all`).catch(() => {});
+  }, [messages, user, recipientId, sendMarkRead]);
 
   const loadMessages = async () => {
     if (!user) return;
     try {
       const data = (await api.get(`/messages/${recipientId}`)) as ChatMessage[];
       setMessages(data || []);
+      await api.put(`/messages/${recipientId}/read-all`).catch(() => {});
     } catch {
       console.error('Error loading messages');
     }
   };
 
   // ── Text sending ─────────────────────────────────────────────────────────
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!newMessage.trim() || !user) return;
-    setLoading(true);
-
-    // Optimistic message
-    const optimistic: ChatMessage = {
-      id: `opt-${Date.now()}`,
-      sender_id: user.id,
-      recipient_id: recipientId,
-      content: newMessage,
-      message_type: 'text',
-      status: 'sent',
-      created_at: new Date().toISOString(),
-    };
-    setMessages((prev) => [...prev, optimistic]);
     const messageContent = newMessage;
     setNewMessage('');
-    setLoading(false);
 
     // Send via Socket.IO (real-time + persistent)
-    sendMessage({
+    const persistedMessage = await sendMessage({
       sender_id: user.id,
       recipient_id: recipientId,
       content: messageContent,
       message_type: 'text',
     });
+
+    if (persistedMessage) {
+      createFirebaseChatNotification({
+        sender_id: user.id,
+        sender_name: user.full_name || 'User',
+        recipient_id: recipientId,
+        content: messageContent,
+        message_type: 'text',
+        is_read: false,
+        created_at: persistedMessage.created_at || new Date().toISOString(),
+      }).catch(() => {});
+    }
   };
 
   // ── Typing indicators ────────────────────────────────────────────────────
@@ -228,6 +264,16 @@ const ChatInterface = ({ recipientId, recipientName }: ChatInterfaceProps) => {
     try {
       const res = (await api.postForm('/messages/upload-audio', form)) as ChatMessage;
       setMessages((prev) => [...prev, res]);
+
+      createFirebaseChatNotification({
+        sender_id: user.id,
+        sender_name: user.full_name || 'User',
+        recipient_id: recipientId,
+        content: 'Audio message',
+        message_type: 'audio',
+        is_read: false,
+        created_at: new Date().toISOString(),
+      }).catch(() => {});
     } catch {
       toast({ title: 'Failed to send audio', variant: 'destructive' });
     } finally {
@@ -274,7 +320,7 @@ const ChatInterface = ({ recipientId, recipientName }: ChatInterfaceProps) => {
             const isSender = message.sender_id === user?.id;
             return (
               <div key={message.id} className={`flex group ${isSender ? 'justify-end' : 'justify-start'}`}>
-                <div className="flex items-end gap-1">
+                <div className={`flex ${isSender ? 'flex-col items-end' : 'items-end'} gap-1`}>
                   {/* Delete button (sender only) */}
                   {isSender && (
                     <button
@@ -287,7 +333,7 @@ const ChatInterface = ({ recipientId, recipientName }: ChatInterfaceProps) => {
                   )}
 
                   <div
-                    className={`max-w-[70%] p-3 rounded-2xl ${
+                    className={`${maxMessageWidth} p-3 rounded-2xl ${
                       isSender
                         ? 'bg-primary text-primary-foreground'
                         : 'bg-muted'
@@ -298,8 +344,12 @@ const ChatInterface = ({ recipientId, recipientName }: ChatInterfaceProps) => {
                     ) : (
                       <p className="text-sm">{message.content}</p>
                     )}
-                    <div className="flex items-center justify-end gap-1 mt-1">
-                      <span className="text-xs opacity-70">
+                  </div>
+
+                  {/* Status and time below message (sender only) */}
+                  {isSender && (
+                    <div className="flex items-center gap-2 text-xs px-1">
+                      <span className="opacity-60">
                         {new Date(message.created_at).toLocaleTimeString([], {
                           hour: '2-digit',
                           minute: '2-digit',
@@ -307,7 +357,7 @@ const ChatInterface = ({ recipientId, recipientName }: ChatInterfaceProps) => {
                       </span>
                       <MessageStatus status={message.status} isSender={isSender} />
                     </div>
-                  </div>
+                  )}
                 </div>
               </div>
             );
@@ -357,9 +407,9 @@ const ChatInterface = ({ recipientId, recipientName }: ChatInterfaceProps) => {
             onChange={(e) => handleInputChange(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && handleSend()}
             placeholder="Type a message…"
-            disabled={loading || recordingState !== 'idle'}
+            disabled={recordingState !== 'idle'}
           />
-          <Button onClick={handleSend} disabled={loading || !newMessage.trim() || recordingState !== 'idle'}>
+          <Button onClick={handleSend} disabled={!newMessage.trim() || recordingState !== 'idle'}>
             <Send className="w-4 h-4" />
           </Button>
         </div>

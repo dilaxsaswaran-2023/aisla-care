@@ -15,6 +15,7 @@ interface CreateUserDialogProps {
     fullName: string;
     role: string;
     caregiverId: string;
+    caregiverIds: string[];
     familyIds: string[];
     phone_country?: string;
     phone_number?: string;
@@ -67,6 +68,18 @@ export const CreateUserDialog = ({
       ? formData.familyIds.filter((i) => i !== id)
       : [...formData.familyIds, id];
     setFormData({ ...formData, familyIds: ids });
+  };
+
+  const toggleCaregiverId = (id: string) => {
+    const ids = formData.caregiverIds.includes(id)
+      ? formData.caregiverIds.filter((i) => i !== id)
+      : [...formData.caregiverIds, id];
+
+    setFormData({
+      ...formData,
+      caregiverIds: ids,
+      caregiverId: ids[0] || '',
+    });
   };
 
   return (
@@ -178,16 +191,40 @@ export const CreateUserDialog = ({
           {/* Caregiver Selection - For Patient Role */}
           {formData.role === 'patient' && (
             <div>
-              <Label>Caregiver (Optional)</Label>
+              <Label>Caregivers (Optional)</Label>
+
+              {formData.caregiverIds.length > 0 && (
+                <div className="flex flex-wrap gap-1 mb-2 mt-1">
+                  {formData.caregiverIds.map((id) => {
+                    const cg = caregivers.find((c) => c._id === id);
+                    return cg ? (
+                      <div
+                        key={id}
+                        className="flex items-center gap-1 bg-primary/10 text-primary rounded-full px-2 py-0.5 text-xs"
+                      >
+                        <span>{cg.full_name}</span>
+                        <button
+                          onClick={() => toggleCaregiverId(id)}
+                          className="hover:text-destructive ml-0.5"
+                          aria-label={`Remove ${cg.full_name}`}
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ) : null;
+                  })}
+                </div>
+              )}
+
               <div className="relative">
                 <div
                   className="border rounded-lg p-2.5 cursor-pointer flex items-center justify-between bg-white"
                   onClick={() => setShowCaregiverDropdown(!showCaregiverDropdown)}
                 >
-                  <span className="text-sm">
-                    {formData.caregiverId
-                      ? caregivers.find((c) => c._id === formData.caregiverId)?.full_name || 'Select a caregiver'
-                      : 'Select a caregiver'}
+                  <span className="text-sm text-muted-foreground">
+                    {formData.caregiverIds.length > 0
+                      ? `${formData.caregiverIds.length} caregiver${formData.caregiverIds.length > 1 ? 's' : ''} selected`
+                      : 'Add caregivers...'}
                   </span>
                   <ChevronDown className="w-4 h-4 text-muted-foreground" />
                 </div>
@@ -201,20 +238,22 @@ export const CreateUserDialog = ({
                     />
                     <div className="max-h-40 overflow-y-auto">
                       {caregivers.length > 0 ? (
-                        caregivers.map((caregiver) => (
+                        caregivers.map((caregiver) => {
+                          const selected = formData.caregiverIds.includes(caregiver._id);
+                          return (
                           <div
                             key={caregiver._id}
-                            className="p-2.5 hover:bg-muted/50 cursor-pointer text-sm"
-                            onClick={() => {
-                              setFormData({ ...formData, caregiverId: caregiver._id });
-                              setShowCaregiverDropdown(false);
-                              setCaregiverSearch('');
-                            }}
+                            className={`p-2.5 hover:bg-muted/50 cursor-pointer text-sm flex items-center justify-between ${selected ? 'bg-primary/5' : ''}`}
+                            onClick={() => toggleCaregiverId(caregiver._id)}
                           >
-                            <div className="font-medium">{caregiver.full_name}</div>
-                            <div className="text-xs text-muted-foreground">{caregiver.email}</div>
+                            <div>
+                              <div className="font-medium">{caregiver.full_name}</div>
+                              <div className="text-xs text-muted-foreground">{caregiver.email}</div>
+                            </div>
+                            {selected && <Check className="w-4 h-4 text-primary flex-shrink-0" />}
                           </div>
-                        ))
+                        );
+                        })
                       ) : (
                         <div className="p-2.5 text-sm text-muted-foreground">No caregivers found</div>
                       )}

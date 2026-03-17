@@ -10,6 +10,7 @@ import socketio
 from app.config import get_settings
 from app.database import engine, Base, SessionLocal
 from app.jwt_utils import init_jwt_secret
+from app.jwt_utils import verify_access_token
 from app.seeder import seed_super_admin
 from app.services.geofence_scheduler import start_scheduler, stop_scheduler
 
@@ -41,6 +42,7 @@ logger = logging.getLogger(__name__)
 
 # Track online users: {user_id: sid}
 _online_users: dict[str, str] = {}
+_sid_to_user: dict[str, str] = {}
 
 
 @asynccontextmanager
@@ -82,27 +84,63 @@ sio = socketio.AsyncServer(
 
 
 @sio.event
-async def connect(sid, environ):
-    logger.info(f"[Socket] Client connected: {sid}")
+async def connect(sid, environ, auth):
+    """Authenticate socket connections using the same JWT access token."""
+    token = None
+    if isinstance(auth, dict):
+        token = auth.get("token")
+
+    if not token:
+        logger.warning(f"[Socket] Rejecting unauthenticated client: {sid}")
+        return False
+
+    db = SessionLocal()
+    try:
+        payload = verify_access_token(db, token)
+        user_id = payload.get("userId")
+        if not user_id:
+            return False
+        _sid_to_user[sid] = user_id
+        logger.info(f"[Socket] Client connected: {sid} (user={user_id})")
+    except Exception:
+        logger.warning(f"[Socket] Rejecting client with invalid token: {sid}")
+        return False
+    finally:
+        db.close()
 
 
 @sio.event
 async def disconnect(sid):
     """Handle client disconnect."""
-    user_id = next((uid for uid, s in _online_users.items() if s == sid), None)
+    user_id = _sid_to_user.pop(sid, None)
     if user_id:
-        del _online_users[user_id]
-        await sio.emit("user_offline", {"user_id": user_id})
+        if _online_users.get(user_id) == sid:
+            del _online_users[user_id]
+            await sio.emit("user_offline", {"user_id": user_id})
     logger.info(f"[Socket] Client disconnected: {sid}")
 
 
 @sio.event
 async def join_room(sid, user_id: str):
     """User joins their personal room and announces they're online."""
-    sio.enter_room(sid, user_id)
+    authenticated_user_id = _sid_to_user.get(sid)
+    if not authenticated_user_id or authenticated_user_id != user_id:
+        logger.warning(f"[Socket] join_room denied for sid={sid}, requested_user={user_id}")
+        return
+
+    await sio.enter_room(sid, user_id)
     _online_users[user_id] = sid
     await sio.emit("user_online", {"user_id": user_id})
     logger.info(f"[Socket/Chat] User {user_id} joined room (sid={sid})")
+
+
+@sio.event
+async def get_user_online_status(sid, data: dict):
+    """Return current online status for a user (ack response)."""
+    user_id = data.get("user_id") if isinstance(data, dict) else None
+    if not user_id:
+        return {"online": False}
+    return {"online": user_id in _online_users}
 
 
 @sio.event
@@ -113,14 +151,18 @@ async def send_message(sid, data: dict):
 
     db = SessionLocal()
     try:
+        recipient_id = data["recipient_id"]
+        sender_id = data["sender_id"]
+        recipient_online = recipient_id in _online_users
+
         msg = MessageModel(
-            sender_id=_uuid.UUID(data["sender_id"]),
-            recipient_id=_uuid.UUID(data["recipient_id"]),
+            sender_id=_uuid.UUID(sender_id),
+            recipient_id=_uuid.UUID(recipient_id),
             content=data.get("content", ""),
             message_type=data.get("message_type", "text"),
             file_url=data.get("file_url"),
             file_metadata=data.get("file_metadata"),
-            status="sent",
+            status="delivered" if recipient_online else "sent",
         )
         db.add(msg)
         db.commit()
@@ -128,13 +170,29 @@ async def send_message(sid, data: dict):
         msg_dict = msg.to_dict()
 
         # Deliver to recipient's room
-        await sio.emit("new_message", msg_dict, room=data["recipient_id"])
+        await sio.emit("new_message", msg_dict, room=recipient_id)
+
+        # Dedicated notification event for recipient-side unread counters/toasts.
+        await sio.emit(
+            "chat_notification",
+            {
+                "sender_id": sender_id,
+                "recipient_id": recipient_id,
+                "content": msg_dict.get("content", ""),
+                "message_type": msg_dict.get("message_type", "text"),
+                "created_at": msg_dict.get("created_at"),
+            },
+            room=recipient_id,
+        )
+
+        # Also emit to sender room so sender sees persisted message immediately.
+        await sio.emit("new_message", msg_dict, room=sender_id)
 
         # Confirm delivery to sender
         await sio.emit(
             "message_status",
-            {"message_id": str(msg.id), "status": "delivered"},
-            room=sid,
+            {"message_id": str(msg.id), "status": msg.status},
+            room=sender_id,
         )
         return msg_dict
     except Exception as exc:

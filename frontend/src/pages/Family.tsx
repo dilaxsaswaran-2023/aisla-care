@@ -8,7 +8,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
 import FamilyStatus from "@/components/family/FamilyStatus";
 import FamilyLocation from "@/components/family/FamilyLocation";
-import FamilyMessages from "@/components/family/FamilyMessages";
+import { CaregiverMessages } from "@/components/caregiver/CaregiverMessages";
 import { FamilyAlertBanner } from "@/components/family/FamilyAlertBanner";
 import { Activity, MapPin, MessageSquare } from "lucide-react";
 import { useFirebaseAlerts } from "@/hooks/useFirebaseAlerts";
@@ -35,6 +35,21 @@ interface PatientItem {
   updated_at?: string | null;
 }
 
+interface MessageContact {
+  id: string;
+  name: string;
+  role?: string;
+  patient_name?: string | null;
+}
+
+interface Conversation {
+  partner_id: string;
+  partner_name: string;
+  unread_count: number;
+  unread?: boolean;
+  last_message?: { content: string; message_type: string; created_at: string };
+}
+
 const navItems = [
   { label: "Status", value: "status", icon: Activity },
   { label: "Location", value: "location", icon: MapPin },
@@ -51,6 +66,9 @@ const Family = () => {
   const [patients, setPatients] = useState<PatientItem[]>([]);
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
   const [caregiver, setCaregiver] = useState<{ id: string; name: string } | null>(null);
+  const [messageContacts, setMessageContacts] = useState<MessageContact[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [loadingMessages, setLoadingMessages] = useState(true);
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [alertBannerVisible, setAlertBannerVisible] = useState(true);
@@ -69,7 +87,14 @@ const Family = () => {
     if (!user) return;
     loadPatientData();
     loadAlerts();
+    loadContacts();
   }, [user]);
+
+  useEffect(() => {
+    if (activeTab === "messages") {
+      loadConversations();
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     if (selectedPatient && selectedPatient.id !== selectedPatientId) {
@@ -137,18 +162,20 @@ const Family = () => {
         setSelectedPatientId(mapped[0].id);
       }
 
-      const caregiverId = mapped[0]?.caregiver_id;
-      if (caregiverId) {
+      const caregivers = Array.isArray(response?.caregivers) ? response.caregivers : [];
+      if (caregivers.length > 0) {
+        const first = caregivers[0];
+        const firstId = first.id || first._id;
         try {
           const convs = await api.get("/messages/conversations") as any[];
-          const match = (convs || []).find((c) => c.partner_id === caregiverId);
+          const match = (convs || []).find((c) => c.partner_id === firstId);
           if (match) {
             setCaregiver({ id: match.partner_id, name: match.partner_name || "Caregiver" });
           } else {
-            setCaregiver({ id: caregiverId, name: "Caregiver" });
+            setCaregiver({ id: firstId, name: first.full_name || "Caregiver" });
           }
         } catch {
-          setCaregiver({ id: caregiverId, name: "Caregiver" });
+          setCaregiver({ id: firstId, name: first.full_name || "Caregiver" });
         }
       } else {
         setCaregiver(null);
@@ -167,6 +194,27 @@ const Family = () => {
       setAlerts(Array.isArray(data) ? data : []);
     } catch {
       setAlerts([]);
+    }
+  };
+
+  const loadContacts = async () => {
+    setLoadingMessages(true);
+    try {
+      const data = (await api.get("/users/contacts")) as MessageContact[];
+      setMessageContacts(data || []);
+    } catch {
+      setMessageContacts([]);
+    } finally {
+      setLoadingMessages(false);
+    }
+  };
+
+  const loadConversations = async () => {
+    try {
+      const data = (await api.get("/messages/conversations")) as Conversation[];
+      setConversations(data || []);
+    } catch {
+      setConversations([]);
     }
   };
 
@@ -255,7 +303,12 @@ const Family = () => {
       )}
 
       {activeTab === "messages" && (
-        <FamilyMessages caregiverId={caregiver?.id ?? null} caregiverName={caregiver?.name ?? "Caregiver"} />
+        <CaregiverMessages
+          contacts={messageContacts}
+          conversations={conversations}
+          loading={loadingMessages}
+          onLoadConversations={loadConversations}
+        />
       )}
     </PortalLayout>
   );

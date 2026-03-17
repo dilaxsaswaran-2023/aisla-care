@@ -21,6 +21,7 @@ interface EditUserDialogProps {
     fullName: string;
     email: string;
     caregiverId: string;
+    caregiverIds: string[];
     familyIds: string[];
     phone_country?: string;
     phone_number?: string;
@@ -64,6 +65,18 @@ export const EditUserDialog = ({
       ? editFormData.familyIds.filter((i) => i !== id)
       : [...editFormData.familyIds, id];
     setEditFormData({ ...editFormData, familyIds: ids });
+  };
+
+  const toggleCaregiverId = (id: string) => {
+    const ids = editFormData.caregiverIds.includes(id)
+      ? editFormData.caregiverIds.filter((i) => i !== id)
+      : [...editFormData.caregiverIds, id];
+
+    setEditFormData({
+      ...editFormData,
+      caregiverIds: ids,
+      caregiverId: ids[0] || '',
+    });
   };
 
   return (
@@ -157,7 +170,31 @@ export const EditUserDialog = ({
             {/* Caregiver Selection - For Patient Role */}
             {editingUser.role === 'patient' && (
               <div>
-                <Label>Caregiver (Optional)</Label>
+                <Label>Caregivers (Optional)</Label>
+
+                {editFormData.caregiverIds.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mb-2 mt-1">
+                    {editFormData.caregiverIds.map((id) => {
+                      const cg = editCaregivers.find((c) => c._id === id);
+                      return cg ? (
+                        <div
+                          key={id}
+                          className="flex items-center gap-1 bg-primary/10 text-primary rounded-full px-2 py-0.5 text-xs"
+                        >
+                          <span>{cg.full_name}</span>
+                          <button
+                            onClick={() => toggleCaregiverId(id)}
+                            className="hover:text-destructive ml-0.5"
+                            aria-label={`Remove ${cg.full_name}`}
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ) : null;
+                    })}
+                  </div>
+                )}
+
                 <div className="relative">
                   <div
                     className="border rounded-lg p-2.5 cursor-pointer flex items-center justify-between bg-white"
@@ -174,10 +211,10 @@ export const EditUserDialog = ({
                       }
                     }}
                   >
-                    <span className="text-sm">
-                      {editFormData.caregiverId
-                        ? editCaregivers.find((c) => c._id === editFormData.caregiverId)?.full_name || 'Select a caregiver'
-                        : 'Select a caregiver'}
+                    <span className="text-sm text-muted-foreground">
+                      {editFormData.caregiverIds.length > 0
+                        ? `${editFormData.caregiverIds.length} caregiver${editFormData.caregiverIds.length > 1 ? 's' : ''} selected`
+                        : 'Add caregivers...'}
                     </span>
                     <ChevronDown className="w-4 h-4 text-muted-foreground" />
                   </div>
@@ -191,20 +228,22 @@ export const EditUserDialog = ({
                       />
                       <div className="max-h-40 overflow-y-auto">
                         {editCaregivers.length > 0 ? (
-                          editCaregivers.map((caregiver) => (
+                          editCaregivers.map((caregiver) => {
+                            const selected = editFormData.caregiverIds.includes(caregiver._id);
+                            return (
                             <div
                               key={caregiver._id}
-                              className="p-2.5 hover:bg-muted/50 cursor-pointer text-sm"
-                              onClick={() => {
-                                setEditFormData({ ...editFormData, caregiverId: caregiver._id });
-                                setShowEditCaregiverDropdown(false);
-                                setEditCaregiverSearch('');
-                              }}
+                              className={`p-2.5 hover:bg-muted/50 cursor-pointer text-sm flex items-center justify-between ${selected ? 'bg-primary/5' : ''}`}
+                              onClick={() => toggleCaregiverId(caregiver._id)}
                             >
-                              <div className="font-medium">{caregiver.full_name}</div>
-                              <div className="text-xs text-muted-foreground">{caregiver.email}</div>
+                              <div>
+                                <div className="font-medium">{caregiver.full_name}</div>
+                                <div className="text-xs text-muted-foreground">{caregiver.email}</div>
+                              </div>
+                              {selected && <Check className="w-4 h-4 text-primary flex-shrink-0" />}
                             </div>
-                          ))
+                            );
+                          })
                         ) : (
                           <div className="p-2.5 text-sm text-muted-foreground">No caregivers found</div>
                         )}
