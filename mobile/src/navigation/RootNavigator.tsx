@@ -12,6 +12,7 @@ import {
 
 import {apiClient} from '../api/client';
 import {colors} from '../constants/colors';
+import {CompleteInviteScreen} from '../screens/login/CompleteInviteScreen';
 import {LoginScreen} from '../screens/login/LoginScreen';
 import {PatientCaregiverChatScreen} from '../screens/patient/PatientCaregiverChatScreen';
 import {PatientHomeScreen} from '../screens/patient/PatientHomeScreen';
@@ -24,7 +25,7 @@ import {
 import type {UserSession} from '../types/models';
 
 type PatientRoute = 'home' | 'caregiverChat';
-const patientLocationSyncIntervalMs = 5 * 60 * 1000;
+const patientLocationSyncIntervalMs = 60 * 1000;
 
 function AuthLoadingScreen(): React.JSX.Element {
   return (
@@ -219,9 +220,53 @@ export function RootNavigator(): React.JSX.Element {
     );
   }
 
+  if (session.status === 'invited') {
+    return (
+      <CompleteInviteScreen
+        initialFullName={session.displayName}
+        initialPhoneCountry={session.phoneCountry}
+        initialPhoneNumber={session.phoneNumber}
+        onSubmit={async values => {
+          const requestId = authRequestIdRef.current + 1;
+          authRequestIdRef.current = requestId;
+
+          const completedSession = await apiClient.completeInvite({
+            fullName: values.fullName,
+            newPassword: values.newPassword,
+            phoneCountry: values.phoneCountry,
+            phoneNumber: values.phoneNumber,
+            address: values.address,
+          });
+
+          if (completedSession.role !== 'patient') {
+            await apiClient.logout().catch(() => {
+              apiClient.clearSession();
+            });
+            throw new Error(
+              'This mobile app currently supports patient accounts only.',
+            );
+          }
+
+          if (requestId !== authRequestIdRef.current) {
+            return;
+          }
+
+          if (shouldPersistSession) {
+            await savePersistedSession(completedSession);
+          }
+
+          setSession(completedSession);
+        }}
+      />
+    );
+  }
+
   return (
     <>
       <PatientHomeScreen
+        onSendSos={async payload => {
+          await apiClient.sendSosAlert(payload);
+        }}
         onOpenCaregiverChat={() => {
           setPatientRoute('caregiverChat');
         }}

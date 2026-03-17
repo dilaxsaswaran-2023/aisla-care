@@ -42,6 +42,17 @@ type BackendPatientLocationResponse = {
   accuracy?: number | null;
 };
 
+type BackendSosAlertResponse = {
+  id: string;
+  alert_type: string;
+  status: string;
+  priority: string;
+  title: string;
+  message: string;
+  voice_transcription?: string | null;
+  created_at?: string;
+};
+
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message) {
     return error.message;
@@ -183,6 +194,35 @@ class ApiClient {
     return this.session;
   }
 
+  async completeInvite(payload: {
+    newPassword: string;
+    fullName: string;
+    phoneCountry?: string;
+    phoneNumber?: string;
+    address?: string;
+  }): Promise<UserSession> {
+    const data = await this.request<BackendLoginResponse>(
+      '/auth/complete-invite',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          new_password: payload.newPassword,
+          full_name: payload.fullName,
+          phone_country: payload.phoneCountry ?? '',
+          phone_number: payload.phoneNumber ?? '',
+          address: payload.address ?? '',
+        }),
+      },
+      true,
+    );
+
+    this.accessToken = data.accessToken;
+    this.refreshToken = data.refreshToken;
+    this.session = this.createSession(data);
+
+    return this.session;
+  }
+
   hydrateSession(session: UserSession): void {
     this.accessToken = session.accessToken;
     this.refreshToken = session.refreshToken;
@@ -286,6 +326,23 @@ class ApiClient {
           lng: location.longitude,
           accuracy: location.accuracy,
           captured_at: location.capturedAt,
+        }),
+      },
+      true,
+    );
+  }
+
+  async sendSosAlert(payload: {
+    message?: string;
+    voiceTranscription?: string;
+  }): Promise<BackendSosAlertResponse> {
+    return this.request<BackendSosAlertResponse>(
+      '/alerts/sos',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          message: payload.message,
+          voice_transcription: payload.voiceTranscription,
         }),
       },
       true,

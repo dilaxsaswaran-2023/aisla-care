@@ -38,6 +38,10 @@ const sosCountdownDurationSeconds = 10;
 type PatientHomeScreenProps = {
   onSignOut: () => Promise<void> | void;
   onOpenCaregiverChat: () => void;
+  onSendSos: (payload: {
+    message?: string;
+    voiceTranscription?: string;
+  }) => Promise<void> | void;
 };
 
 type SpeechResultsEvent = {
@@ -463,6 +467,7 @@ function MicGlyph({active}: {active: boolean}): React.JSX.Element {
 export function PatientHomeScreen({
   onSignOut,
   onOpenCaregiverChat,
+  onSendSos,
 }: PatientHomeScreenProps): React.JSX.Element {
   const [activeTab, setActiveTab] = useState<DashboardTab>('home');
   const [activeVoiceSurface, setActiveVoiceSurface] =
@@ -478,6 +483,8 @@ export function PatientHomeScreen({
   const [sosCountdownSeconds, setSosCountdownSeconds] = useState(
     sosCountdownDurationSeconds,
   );
+  const [isSubmittingSos, setIsSubmittingSos] = useState(false);
+  const [sosSuccessMessage, setSosSuccessMessage] = useState('');
   const sosRequestIdRef = useRef(0);
   const reminderFade = useRef(new Animated.Value(0)).current;
   const lastReminderAnnouncementRef = useRef<string | null>(null);
@@ -669,6 +676,8 @@ export function PatientHomeScreen({
     setIsListening(false);
     setPartialTranscript('');
     audioService.stopRecording();
+    setIsSubmittingSos(false);
+    setSosSuccessMessage('');
     setActiveVoiceSurface(null);
   };
 
@@ -907,6 +916,37 @@ export function PatientHomeScreen({
     beginListening().catch(() => undefined);
   };
 
+  const submitSosAlert = async () => {
+    if (isSubmittingSos) {
+      return;
+    }
+
+    const message = displayedTranscript.trim();
+
+    setIsSubmittingSos(true);
+    setSosError('');
+    setSosSuccessMessage('');
+
+    try {
+      await onSendSos({
+        message: message || 'Patient triggered SOS button',
+        voiceTranscription: message || undefined,
+      });
+      setSosSuccessMessage('SOS alert sent to your care team.');
+      setTimeout(() => {
+        closeVoiceSurface().catch(() => undefined);
+      }, 1200);
+    } catch (error) {
+      setSosError(
+        error instanceof Error
+          ? error.message
+          : 'Unable to send SOS alert right now.',
+      );
+    } finally {
+      setIsSubmittingSos(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <BrandHeader onSignOut={onSignOut} />
@@ -1143,6 +1183,25 @@ export function PatientHomeScreen({
                   <MicGlyph active={isListening} />
                 </Pressable>
               </View>
+
+              {sosSuccessMessage ? (
+                <Text style={styles.sosSuccessText}>{sosSuccessMessage}</Text>
+              ) : null}
+
+              <Pressable
+                disabled={isSubmittingSos}
+                onPress={() => {
+                  submitSosAlert().catch(() => undefined);
+                }}
+                style={({pressed}) => [
+                  styles.sosSubmitButton,
+                  isSubmittingSos ? styles.sosSubmitButtonDisabled : null,
+                  pressed ? styles.pressed : null,
+                ]}>
+                <Text style={styles.sosSubmitButtonText}>
+                  {isSubmittingSos ? 'Sending...' : 'Send SOS Alert'}
+                </Text>
+              </Pressable>
             </View>
           </Pressable>
         </Pressable>
@@ -1810,6 +1869,29 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 25,
     color: '#6A7E8F',
+  },
+  sosSubmitButton: {
+    marginTop: 16,
+    minHeight: 46,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#D93E32',
+    paddingHorizontal: 18,
+  },
+  sosSubmitButtonDisabled: {
+    opacity: 0.65,
+  },
+  sosSubmitButtonText: {
+    fontFamily: 'Poppins-Bold',
+    color: '#FFFFFF',
+    fontSize: 15,
+  },
+  sosSuccessText: {
+    marginTop: 12,
+    color: '#1D7A28',
+    fontSize: 14,
+    textAlign: 'center',
   },
   buddiSuggestionList: {
     marginTop: 26,
