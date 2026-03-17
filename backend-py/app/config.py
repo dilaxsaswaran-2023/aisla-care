@@ -1,4 +1,4 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
 
 
@@ -17,14 +17,22 @@ class Settings(BaseSettings):
     twilio_auth_token: str = ""
     twilio_from_number: str = ""
 
+    # Azure OpenAI
+    azure_openai_api_key: str = ""
+    azure_openai_endpoint: str = ""
+    azure_openai_api_version: str = "2024-10-21"
+    azure_openai_gpt4_1_mini_deployment: str = "gpt-4.1-mini"
+
     # ── Monitor checks ────────────────────────────────────────────────────────
     check_sos_enabled: bool = True
     check_geofence_enabled: bool = True
     check_inactive_enabled: bool = False
     check_medication_enabled: bool = False
 
-    class Config:
-        env_file = ".env"
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        extra="ignore",
+    )
 
 
 @lru_cache()
