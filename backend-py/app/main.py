@@ -13,6 +13,7 @@ from app.jwt_utils import init_jwt_secret
 from app.jwt_utils import verify_access_token
 from app.seeder import seed_super_admin
 from app.services.geofence_scheduler import start_scheduler, stop_scheduler
+from app.services.medication_scheduler import start_medication_scheduler, stop_medication_scheduler
 
 # Initialize logging as early as possible
 from app.logging_config import setup_logging
@@ -64,8 +65,14 @@ async def lifespan(app: FastAPI):
         logger.info("[DB] JWT secret and super-admin initialized")
         
         # Start background geofence scheduler
-        start_scheduler()
-        logger.info("[Scheduler] Geofence scheduler started")
+        if settings.check_geofence_enabled:
+            start_scheduler()
+            logger.info("[Scheduler] Geofence scheduler started")
+
+        # Start background medication scheduler
+        if settings.check_medication_enabled:
+            start_medication_scheduler()
+            logger.info("[Scheduler] Medication scheduler started")
     except Exception as e:
         logger.warning(f"[WARN] Database initialization error: {type(e).__name__}: {e}")
 
@@ -73,6 +80,7 @@ async def lifespan(app: FastAPI):
 
     # ── Shutdown ─────────────────────────────────────────────────────────────
     stop_scheduler()
+    stop_medication_scheduler()
     logger.info("[OK] Application shutting down")
 
 

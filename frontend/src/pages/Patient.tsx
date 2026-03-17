@@ -6,7 +6,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { AlertCircle, Bell, MessageCircle, Heart, LogOut, User, Phone, Users, ArrowLeft, ChevronRight, MessageSquare } from "lucide-react";
 import BudiiChat from "@/components/patient/BudiiChat";
-import RemindersList from "@/components/patient/RemindersList";
 import ChatInterface from "@/components/chat/ChatInterface";
 import VoiceCall from "@/components/communication/VoiceCall";
 import SOSPopup from "@/components/patient/SOSPopup";
@@ -24,6 +23,20 @@ interface ChatContact {
   name: string;
 }
 
+interface MedicationMonitorItem {
+  schedule_id: string;
+  medication_name: string;
+  description?: string | null;
+  urgency_level: "low" | "medium" | "high";
+  time: string;
+  scheduled_for_at: string;
+  due_at: string;
+  status: "pending" | "taken" | "missed";
+  taken_at?: string | null;
+  monitor_id?: string | null;
+  can_mark_done: boolean;
+}
+
 const Patient = () => {
   const { user, signOut } = useAuth();
   const [showBudii, setShowBudii] = useState(false);
@@ -33,6 +46,9 @@ const Patient = () => {
   const [caregiverId, setCaregiverId] = useState<string | null>(null);
   const [chatContact, setChatContact] = useState<ChatContact | null>(null);
   const [relationships, setRelationships] = useState<Relationship[]>([]);
+  const [medicationItems, setMedicationItems] = useState<MedicationMonitorItem[]>([]);
+  const [loadingMedication, setLoadingMedication] = useState(false);
+  const [markingDoneKey, setMarkingDoneKey] = useState<string | null>(null);
   const { toast } = useToast();
 
   const loadRelationships = async () => {
@@ -99,8 +115,51 @@ const Patient = () => {
     }
   };
 
+  const loadMedicationStatus = async () => {
+    if (!user?.id) return;
+    setLoadingMedication(true);
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const data = await api.get(`/medication-schedules/monitor?patient_id=${user.id}&date=${today}`) as {
+        items?: MedicationMonitorItem[];
+      };
+      setMedicationItems(data?.items || []);
+    } catch (error) {
+      console.error("Error loading medication status:", error);
+      setMedicationItems([]);
+    } finally {
+      setLoadingMedication(false);
+    }
+  };
+
+  const markMedicationDone = async (item: MedicationMonitorItem) => {
+    if (!item.can_mark_done) return;
+    const key = `${item.schedule_id}-${item.time}`;
+    setMarkingDoneKey(key);
+    try {
+      await api.post(`/medication-schedules/${item.schedule_id}/mark-taken`, {
+        taken_at: new Date().toISOString(),
+        scheduled_for_at: item.scheduled_for_at,
+        notes: `Taken from patient app for ${item.time}`,
+      });
+      toast({
+        title: "Medication marked as taken",
+        description: `${item.medication_name} at ${item.time}`,
+      });
+      await loadMedicationStatus();
+    } catch (error: any) {
+      toast({
+        title: "Failed to mark as done",
+        description: error?.message || "Please try again",
+        variant: "destructive",
+      });
+    } finally {
+      setMarkingDoneKey(null);
+    }
+  };
+
   useEffect(() => {
-    if (user) { loadRelationships(); startGPSTracking(); }
+    if (user) { loadRelationships(); startGPSTracking(); loadMedicationStatus(); }
   }, [user]);
 
   const handleSOS = async () => {
@@ -203,15 +262,76 @@ const Patient = () => {
             })}
           </div>
 
-          {/* Reminders */}
+          {/* Medications */}
           <Card className="care-card">
             <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Bell className="w-4 h-4 text-muted-foreground" />
-                Your Reminders
+              <CardTitle className="text-base flex items-center justify-between gap-2">
+                <span className="flex items-center gap-2">
+                  <Bell className="w-4 h-4 text-muted-foreground" />
+                  Today's Medication Schedule
+                </span>
+                <Button variant="ghost" size="sm" onClick={loadMedicationStatus}>Refresh</Button>
               </CardTitle>
             </CardHeader>
-            <CardContent><RemindersList /></CardContent>
+            <CardContent>
+              {loadingMedication ? (
+                <p className="text-sm text-muted-foreground">Loading medication schedules...</p>
+              ) : medicationItems.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No medication schedules for today.</p>
+              ) : (
+                <div className="space-y-2">
+                  {medicationItems.map((item) => {
+                    const key = `${item.schedule_id}-${item.time}`;
+                    const isDone = item.status === "taken";
+                    const isMissed = item.status === "missed";
+                    const statusVariant = isDone ? "default" : isMissed ? "destructive" : "secondary";
+                    const statusLabel = isDone ? "Taken" : isMissed ? "Missed" : "Pending";
+                    const markingDone = markingDoneKey === key;
+                    
+                    return (
+                      <div key={key} className="flex items-start justify-between gap-3 p-3 bg-muted/50 rounded-lg">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-semibold text-sm text-foreground">{item.medication_name}</p>
+                          {item.description && (
+                            <p className="text-xs text-muted-foreground">{item.description}</p>
+                          )}
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-xs font-medium text-foreground">{item.time}</span>
+                            <Badge variant={statusVariant as any} className="text-xs">
+                              {statusLabel}
+                            </Badge>
+                            {item.urgency_level && (
+                              <Badge
+                                variant={item.urgency_level === 'high' ? 'destructive' : item.urgency_level === 'low' ? 'secondary' : 'default'}
+                                className="text-xs"
+                              >
+                                {item.urgency_level.toUpperCase()}
+                              </Badge>
+                            )}
+                          </div>
+                          {item.taken_at && (
+                            <p className="text-xs text-green-600 mt-1">
+                              Taken at {new Date(item.taken_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </p>
+                          )}
+                        </div>
+                        {isDone ? (
+                          <Button size="sm" disabled>Done</Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            onClick={() => markMedicationDone(item)}
+                            disabled={markingDone}
+                          >
+                            {markingDoneKey === key ? "Saving..." : "Done"}
+                          </Button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
           </Card>
 
           {/* Care Team */}

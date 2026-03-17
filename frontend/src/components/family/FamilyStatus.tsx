@@ -1,7 +1,9 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Activity, HeartPulse, Clock, Phone, MessageSquare, Shield, AlertTriangle, UserRound } from "lucide-react";
+import { Activity, HeartPulse, Clock, Phone, MessageSquare, Shield, AlertTriangle, UserRound, Bell, RefreshCw } from "lucide-react";
+import { useState, useEffect } from "react";
+import { api } from "@/lib/api";
 
 interface AlertItem {
   id: string;
@@ -11,6 +13,20 @@ interface AlertItem {
   priority?: string;
   status: string;
   created_at: string;
+}
+
+interface MedicationMonitorItem {
+  schedule_id: string;
+  medication_name: string;
+  description?: string;
+  urgency_level: string;
+  time: string;
+  scheduled_for_at: string;
+  due_at: string;
+  status: "pending" | "taken" | "missed";
+  taken_at?: string;
+  monitor_id?: string;
+  can_mark_done: boolean;
 }
 
 interface PatientItem {
@@ -58,8 +74,35 @@ const FamilyStatus = ({
   onCallCaregiver,
   onMessageCaregiver,
 }: FamilyStatusProps) => {
+  const [medicationItems, setMedicationItems] = useState<MedicationMonitorItem[]>([]);
+  const [loadingMedication, setLoadingMedication] = useState(false);
   const recentAlerts = alerts.slice(0, 6);
   const status = getAlertLevel(alerts);
+
+  const loadMedicationStatus = async (patientId: string) => {
+    if (!patientId) return;
+    setLoadingMedication(true);
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const response = await api.get(`/medication-schedules/monitor?patient_id=${patientId}&date=${today}`) as {
+        date?: string;
+        items?: MedicationMonitorItem[];
+      };
+      const data = response?.items || [];
+      setMedicationItems(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error('Error loading medication status:', error);
+      setMedicationItems([]);
+    } finally {
+      setLoadingMedication(false);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedPatientId) {
+      loadMedicationStatus(selectedPatientId);
+    }
+  }, [selectedPatientId]);
 
   if (loading) {
     return (
@@ -185,6 +228,86 @@ const FamilyStatus = ({
                 </div>
               );
             })
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="care-card">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Bell className="w-4 h-4 text-muted-foreground" />
+              Today's Medication Status ({medicationItems.length})
+            </CardTitle>
+            <Button variant="ghost" size="sm" onClick={() => selectedPatientId && loadMedicationStatus(selectedPatientId)}>
+              <RefreshCw className="w-4 h-4" />
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {loadingMedication ? (
+            <p className="text-sm text-muted-foreground">Loading medication status...</p>
+          ) : medicationItems.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No medication scheduled for today.</p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {medicationItems.map((item) => {
+                const key = `${item.schedule_id}-${item.time}`;
+                const isDone = item.status === "taken";
+                const isMissed = item.status === "missed";
+                const statusVariant = isDone ? "default" : isMissed ? "destructive" : "secondary";
+                const statusLabel = isDone ? "Taken" : isMissed ? "Missed" : "Pending";
+                
+                return (
+                  <div key={key} className="p-4 border rounded-lg space-y-3 hover:bg-muted/30 transition-colors">
+                    <div>
+                      <p className="font-semibold text-sm text-foreground">{item.medication_name}</p>
+                      {item.description && (
+                        <p className="text-xs text-muted-foreground mt-1">{item.description}</p>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="flex flex-col">
+                        <span className="font-medium text-muted-foreground">Scheduled Time</span>
+                        <span className="font-semibold">{item.time}</span>
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="font-medium text-muted-foreground">Status</span>
+                        <Badge variant={statusVariant} className="text-xs w-fit">
+                          {statusLabel}
+                        </Badge>
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="font-medium text-muted-foreground">Scheduled For</span>
+                        <span>{new Date(item.scheduled_for_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="font-medium text-muted-foreground">Due At</span>
+                        <span>{new Date(item.due_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                      </div>
+                      {item.taken_at && (
+                        <div className="col-span-2 flex flex-col">
+                          <span className="font-medium text-green-600">Taken At</span>
+                          <span className="text-green-600 font-semibold">{new Date(item.taken_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                      )}
+                      {item.urgency_level && (
+                        <div className="flex flex-col">
+                          <span className="font-medium text-muted-foreground">Urgency</span>
+                          <Badge
+                            variant={item.urgency_level === 'high' ? 'destructive' : item.urgency_level === 'low' ? 'secondary' : 'default'}
+                            className="text-xs w-fit"
+                          >
+                            {item.urgency_level.toUpperCase()}
+                          </Badge>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </CardContent>
       </Card>

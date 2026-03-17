@@ -17,7 +17,7 @@ def monitor_status():
     - SOS: Event-driven via /api/alerts/sos endpoint
     - Geofence: Scheduled independently every 60 seconds
     - Inactive: Not yet implemented
-    - Medication: Not yet implemented
+    - Medication: Scheduled independently every 30 minutes
     """
     settings = get_settings()
     return {
@@ -42,8 +42,10 @@ def monitor_status():
             },
             "medication": {
                 "enabled": settings.check_medication_enabled,
-                "implemented": False,
-                "mode": "not-yet-implemented",
+                "implemented": True,
+                "mode": "scheduled",
+                "interval_seconds": 1800,
+                "description": "Runs every 30 minutes for active medication schedules",
             },
         }
     }

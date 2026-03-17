@@ -1,16 +1,13 @@
 import { MessageSquare, MapPin, CheckCircle, Heart, Clock } from "lucide-react";
 
 const ActivityFeed = () => {
-  const activities = [
-    { id: 1, patient: "Margaret Smith", message: "Had a conversation with Budii about today's weather", time: "10 minutes ago", icon: MessageSquare, color: "text-primary", bgColor: "bg-primary/10" },
-    { id: 2, patient: "Patricia Wilson", message: "Completed morning medication reminder", time: "25 minutes ago", icon: CheckCircle, color: "text-success", bgColor: "bg-success/10" },
-    { id: 3, patient: "John Davies", message: "Returned to safe zone after brief walk", time: "1 hour ago", icon: MapPin, color: "text-accent-foreground", bgColor: "bg-accent" },
-    { id: 4, patient: "Margaret Smith", message: "Daily wellness check completed — feeling good", time: "2 hours ago", icon: Heart, color: "text-primary", bgColor: "bg-primary/10" },
-  ];
+  const activities: any[] = [];
 
   return (
     <div className="space-y-1">
-      {activities.map((activity, index) => {
+      {activities.length === 0 ? (
+        <div className="p-3 rounded-lg border border-border bg-card text-sm text-muted-foreground">No recent activity</div>
+      ) : activities.map((activity, index) => {
         const Icon = activity.icon;
         return (
           <div key={activity.id} className="relative">

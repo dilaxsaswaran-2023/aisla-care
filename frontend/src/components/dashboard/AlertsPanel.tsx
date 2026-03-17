@@ -6,35 +6,7 @@ interface AlertsPanelProps {
 }
 
 const AlertsPanel = ({ detailed = false }: AlertsPanelProps) => {
-  const alerts = [
-    {
-      id: 1,
-      type: "sos",
-      patient: "John Davies",
-      message: "SOS button pressed",
-      time: "2 minutes ago",
-      location: "Home - Living Room",
-      priority: "high"
-    },
-    {
-      id: 2,
-      type: "reminder",
-      patient: "Margaret Smith",
-      message: "Medication reminder missed",
-      time: "15 minutes ago",
-      location: "Home",
-      priority: "medium"
-    },
-    {
-      id: 3,
-      type: "location",
-      patient: "Patricia Wilson",
-      message: "Geofence boundary crossed",
-      time: "1 hour ago",
-      location: "Outside safe zone",
-      priority: "medium"
-    }
-  ];
+  const alerts: any[] = [];
 
   return (
     <div className="space-y-3">

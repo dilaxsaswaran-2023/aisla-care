@@ -32,11 +32,6 @@ interface DropdownUser {
   email: string;
 }
 
-const samplePatients: Patient[] = [
-  { id: 'sample-1', full_name: 'Margaret Smith', phone: '+44 7700 900123', address: '14 Elm Road, London', email: 'margaret@example.com', role: 'patient' },
-  { id: 'sample-2', full_name: 'John Davies', phone: '+44 7700 900456', address: '22 Oak Lane, Manchester', email: 'john@example.com', role: 'patient' },
-  { id: 'sample-3', full_name: 'Patricia Wilson', phone: '+44 7700 900789', address: '8 Pine Street, Bristol', email: 'patricia@example.com', role: 'patient' },
-];
 
 export const PatientManagement = ({ isMobile }: { isMobile?: boolean }) => {
   const { toast } = useToast();
@@ -94,7 +89,7 @@ export const PatientManagement = ({ isMobile }: { isMobile?: boolean }) => {
     } catch {
       // fall through to sample
     }
-    setPatients(samplePatients);
+    setPatients([]);
   };
 
   const loadUserFamilies = useCallback(async (search: string = '') => {
@@ -235,7 +230,7 @@ export const PatientManagement = ({ isMobile }: { isMobile?: boolean }) => {
     }
   };
 
-  const isSample = patients === samplePatients;
+  const isSample = false;
 
   return (
     <>
@@ -390,9 +385,9 @@ export const PatientManagement = ({ isMobile }: { isMobile?: boolean }) => {
           </div>
         </CardHeader>
         <CardContent>
-          {isSample && (
-            <div className="bg-accent/50 border border-primary/10 rounded-lg p-3 mb-4">
-              <p className="text-xs text-muted-foreground">Showing sample data — assign real patients to see live information.</p>
+          {patients.length === 0 && (
+            <div className="bg-muted/50 border border-border rounded-lg p-3 mb-4">
+              <p className="text-xs text-muted-foreground">No patients found. Add patients to see live information.</p>
             </div>
           )}
           <div className="space-y-3">

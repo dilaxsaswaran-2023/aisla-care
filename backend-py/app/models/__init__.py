@@ -12,6 +12,8 @@ from app.models.system_config import SystemConfig
 from app.models.token import Token
 from app.models.user import User
 from app.models.medication_schedule import MedicationSchedule
+from app.models.medication_schedule_monitor import MedicationScheduleMonitor
+from app.models.medication_schedule_breach import MedicationScheduleBreach
 from app.models.patient_active_hours import PatientActiveHours
 from app.models.agent_event import AgentEvent
 
@@ -31,6 +33,8 @@ __all__ = [
     "Token",
     "User",
     "MedicationSchedule",
+    "MedicationScheduleMonitor",
+    "MedicationScheduleBreach",
     "PatientActiveHours",
     "AgentEvent",
 ]

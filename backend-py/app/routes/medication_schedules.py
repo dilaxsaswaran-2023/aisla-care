@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
@@ -7,6 +7,7 @@ from typing import List, Optional
 
 from app.database import get_db
 from app.models.medication_schedule import MedicationSchedule
+from app.models.medication_schedule_monitor import MedicationScheduleMonitor
 from app.auth import get_current_user
 from app.models.user import User
 
@@ -41,6 +42,12 @@ class MedicationScheduleUpdate(BaseModel):
     urgency_level: Optional[str] = None
     grace_period_minutes: Optional[int] = None
     is_active: Optional[bool] = None
+
+
+class MedicationTakePayload(BaseModel):
+    taken_at: Optional[datetime] = None
+    scheduled_for_at: Optional[str] = None
+    notes: Optional[str] = None
 
 
 def _get_accessible_patient_ids(db: Session, current_user: dict) -> List[uuid.UUID]:
@@ -80,6 +87,102 @@ def _get_accessible_patient_ids(db: Session, current_user: dict) -> List[uuid.UU
 
 def _has_patient_access(db: Session, current_user: dict, patient_id: uuid.UUID) -> bool:
     return patient_id in _get_accessible_patient_ids(db, current_user)
+
+
+def _to_sunday_based_weekday(dt: datetime) -> int:
+    return (dt.weekday() + 1) % 7
+
+
+def _is_schedule_due_on_date(schedule: MedicationSchedule, date_value: datetime) -> bool:
+    if schedule.schedule_type == "daily":
+        return True
+    days = schedule.days_of_week or []
+    if not days:
+        return False
+    return _to_sunday_based_weekday(date_value) in days
+
+
+@router.get("/monitor")
+def list_medication_monitor_status(
+    patient_id: str,
+    date: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        patient_uuid = uuid.UUID(patient_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid patient_id")
+
+    if not _has_patient_access(db, current_user, patient_uuid):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    if date:
+        try:
+            target_date = datetime.fromisoformat(date).date()
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date. Use YYYY-MM-DD")
+    else:
+        target_date = datetime.utcnow().date()
+
+    day_start = datetime.combine(target_date, datetime.min.time())
+    day_end = day_start + timedelta(days=1)
+
+    schedules = db.query(MedicationSchedule).filter(
+        MedicationSchedule.patient_id == patient_uuid,
+        MedicationSchedule.is_active == True,
+    ).order_by(MedicationSchedule.created_at.desc()).all()
+
+    monitor_rows = db.query(MedicationScheduleMonitor).filter(
+        MedicationScheduleMonitor.patient_id == patient_uuid,
+        MedicationScheduleMonitor.scheduled_for_at >= day_start,
+        MedicationScheduleMonitor.scheduled_for_at < day_end,
+    ).all()
+
+    monitor_by_key = {
+        (str(row.medication_schedule_id), row.scheduled_for_at.strftime("%H:%M")): row
+        for row in monitor_rows
+    }
+
+    now = datetime.utcnow()
+    items = []
+    for schedule in schedules:
+        if not _is_schedule_due_on_date(schedule, day_start):
+            continue
+
+        for time_value in schedule.scheduled_times or []:
+            try:
+                hour, minute = map(int, str(time_value).split(":"))
+            except Exception:
+                continue
+
+            scheduled_for_at = day_start.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            due_at = scheduled_for_at + timedelta(minutes=int(schedule.grace_period_minutes or 60))
+
+            monitor = monitor_by_key.get((str(schedule.id), str(time_value)))
+            if monitor:
+                status = monitor.status
+                taken_at = monitor.taken_at
+            else:
+                status = "missed" if now > due_at else "pending"
+                taken_at = None
+
+            items.append({
+                "schedule_id": str(schedule.id),
+                "medication_name": schedule.name,
+                "description": schedule.description,
+                "urgency_level": schedule.urgency_level,
+                "time": str(time_value),
+                "scheduled_for_at": scheduled_for_at.isoformat(),
+                "due_at": due_at.isoformat(),
+                "status": status,
+                "taken_at": taken_at.isoformat() if taken_at else None,
+                "monitor_id": str(monitor.id) if monitor else None,
+                "can_mark_done": status != "taken",
+            })
+
+    items.sort(key=lambda item: item["scheduled_for_at"])
+    return {"date": target_date.isoformat(), "items": items}
 
 # GET /api/medication-schedules - List all medication schedules for current user's patients
 @router.get("/")
@@ -303,3 +406,88 @@ def toggle_medication_schedule_active(
     db.commit()
     db.refresh(schedule)
     return {"success": True, "is_active": schedule.is_active}
+
+
+@router.post("/{schedule_id}/mark-taken")
+def mark_medication_taken(
+    schedule_id: str,
+    body: MedicationTakePayload,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        sid = uuid.UUID(schedule_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid schedule ID")
+
+    schedule = db.query(MedicationSchedule).filter(MedicationSchedule.id == sid).first()
+    if not schedule:
+        raise HTTPException(status_code=404, detail="Medication schedule not found")
+
+    if not _has_patient_access(db, current_user, schedule.patient_id):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    taken_at = body.taken_at or datetime.utcnow()
+    if taken_at.tzinfo is not None:
+        taken_at = taken_at.replace(tzinfo=None)
+
+    # If scheduled_for_at is provided, use it directly
+    if body.scheduled_for_at:
+        try:
+            scheduled_for_at = datetime.fromisoformat(body.scheduled_for_at)
+            if scheduled_for_at.tzinfo is not None:
+                scheduled_for_at = scheduled_for_at.replace(tzinfo=None)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid scheduled_for_at format")
+        due_at = scheduled_for_at + timedelta(minutes=int(schedule.grace_period_minutes or 60))
+    else:
+        # Find nearest due schedule window for this dose (today/yesterday).
+        candidates = []
+        for day_offset in [0, -1]:
+            base_date = taken_at + timedelta(days=day_offset)
+            if not _is_schedule_due_on_date(schedule, base_date):
+                continue
+            for time_value in schedule.scheduled_times or []:
+                try:
+                    hour, minute = map(int, str(time_value).split(":"))
+                except Exception:
+                    continue
+                scheduled_for_at = base_date.replace(hour=hour, minute=minute, second=0, microsecond=0)
+                due_at = scheduled_for_at + timedelta(minutes=int(schedule.grace_period_minutes or 60))
+                candidates.append((scheduled_for_at, due_at))
+
+        if not candidates:
+            raise HTTPException(status_code=400, detail="No valid scheduled times found")
+
+        # Pick the closest schedule occurrence to the taken time.
+        scheduled_for_at, due_at = min(candidates, key=lambda item: abs((taken_at - item[0]).total_seconds()))
+
+    user_id = uuid.UUID(current_user["userId"])
+    monitor = (
+        db.query(MedicationScheduleMonitor)
+        .filter(
+            MedicationScheduleMonitor.patient_id == schedule.patient_id,
+            MedicationScheduleMonitor.medication_schedule_id == schedule.id,
+            MedicationScheduleMonitor.scheduled_for_at == scheduled_for_at,
+        )
+        .first()
+    )
+
+    if not monitor:
+        monitor = MedicationScheduleMonitor(
+            patient_id=schedule.patient_id,
+            medication_schedule_id=schedule.id,
+            scheduled_for_at=scheduled_for_at,
+            due_at=due_at,
+            created_by=user_id,
+        )
+        db.add(monitor)
+
+    monitor.taken_at = taken_at
+    monitor.status = "taken"
+    monitor.notes = body.notes
+    monitor.checked_at = datetime.utcnow()
+
+    db.commit()
+    db.refresh(monitor)
+    return {"success": True, "monitor": monitor.to_dict()}
