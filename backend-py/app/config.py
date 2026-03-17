@@ -20,8 +20,8 @@ class Settings(BaseSettings):
     # Azure OpenAI
     azure_openai_api_key: str = ""
     azure_openai_endpoint: str = ""
-    azure_openai_api_version: str = "2024-10-21"
-    azure_openai_gpt4_1_mini_deployment: str = "gpt-4.1-mini"
+    azure_openai_api_version: str = "2024-12-01-preview"
+    azure_openai_gpt5_nano_deployment: str = "gpt-5-nano"
 
     # ── Monitor checks ────────────────────────────────────────────────────────
     check_sos_enabled: bool = True
