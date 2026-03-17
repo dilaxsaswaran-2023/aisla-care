@@ -8,9 +8,9 @@ logger = logging.getLogger("sos.priority")
 def get_azure_client():
     settings = get_settings()
     return AzureOpenAI(
-        api_key=settings.azure_openai_api_key,
         api_version=settings.azure_openai_api_version,
         azure_endpoint=settings.azure_openai_endpoint,
+        api_key=settings.azure_openai_api_key,
     )
 
 
@@ -19,12 +19,23 @@ def get_sos_priority(transcription: str) -> str:
         return "high"
 
     settings = get_settings()
-    deployment_name = settings.azure_openai_gpt4_1_mini_deployment
+    deployment = settings.azure_openai_gpt5_nano_deployment
 
-    prompt = f"""
-You are classifying an elderly patient's SOS voice message.
+    try:
+        client = get_azure_client()
 
-Return only one word from this list:
+        response = client.chat.completions.create(
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an SOS priority classifier. Return exactly one word only: low, medium, or high.",
+                },
+                {
+                    "role": "user",
+                    "content": f"""
+Classify this elderly patient's SOS voice message.
+
+Return only one word from:
 low
 medium
 high
@@ -43,29 +54,15 @@ Examples:
 
 Message:
 \"\"\"{transcription}\"\"\"
-""".strip()
-
-    try:
-        client = get_azure_client()
-
-        response = client.chat.completions.create(
-            model=deployment_name,
-            temperature=0,
-            max_tokens=5,
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are an SOS priority classifier. Output exactly one word only: low, medium, or high."
-                },
-                {
-                    "role": "user",
-                    "content": prompt
+""".strip(),
                 }
             ],
+            max_completion_tokens=200,
+            model=deployment,
         )
 
-        result = response.choices[0].message.content.strip().lower()
-
+        result = (response.choices[0].message.content or "").strip().lower()
+        logger.info(f"[SOS_PRIORITY] Azure OpenAI response='{result}'") 
         if result not in {"low", "medium", "high"}:
             logger.warning(f"[SOS_PRIORITY] invalid model output='{result}', defaulting to high")
             return "high"
