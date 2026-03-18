@@ -18,6 +18,7 @@ from app.models.sos_alert import SosAlert
 from app.services.budii_alert_relationship_service import create_budii_alert_relationships
 from app.services.firebase_helper import push_patient_alert
 from app.services.sos_priority_service import get_sos_priority
+from app.services.audit_log_service import log_audit_event, build_field_changes
 
 logger = logging.getLogger("alerts.router")
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
@@ -190,6 +191,24 @@ def create_alert(
     db.commit()
     db.refresh(alert)
 
+    log_audit_event(
+        db,
+        action="alert_created",
+        event_type="alerts",
+        entity_type="alert",
+        entity_id=str(alert.id),
+        current_user=current_user,
+        patient_id=alert.patient_id,
+        summary="Alert created",
+        details="A new patient alert was created.",
+        context={
+            "alert_type": alert.alert_type,
+            "priority": alert.priority,
+            "status": alert.status,
+            "title": alert.title,
+        },
+    )
+
     # Create alert relationships for all caregivers and family members
     relationships = create_alert_relationships(db, alert.id, patient_id)
 
@@ -212,12 +231,50 @@ def update_alert(
     if not alert:
         raise HTTPException(404, "Alert not found")
 
+    before = {
+        "status": alert.status,
+        "priority": alert.priority,
+        "title": alert.title,
+        "message": alert.message,
+        "latitude": alert.latitude,
+        "longitude": alert.longitude,
+    }
+
     for key in ["status", "priority", "title", "message", "latitude", "longitude"]:
         if key in body:
             setattr(alert, key, body[key])
 
     db.commit()
     db.refresh(alert)
+
+    after = {
+        "status": alert.status,
+        "priority": alert.priority,
+        "title": alert.title,
+        "message": alert.message,
+        "latitude": alert.latitude,
+        "longitude": alert.longitude,
+    }
+    changes = build_field_changes(before, after, ["status", "priority", "title", "message", "latitude", "longitude"])
+
+    log_audit_event(
+        db,
+        action="alert_updated",
+        event_type="alerts",
+        entity_type="alert",
+        entity_id=str(alert.id),
+        current_user=current_user,
+        patient_id=alert.patient_id,
+        summary="Alert updated",
+        details="Alert fields were updated.",
+        context={
+            "alert_type": alert.alert_type,
+            "status": alert.status,
+            "priority": alert.priority,
+        },
+        changes=changes,
+    )
+
     return alert.to_dict()
 
 
@@ -243,6 +300,20 @@ def mark_alert_read(
     alert.is_read = True
     db.add(alert)
     db.commit()
+
+    log_audit_event(
+        db,
+        action="alert_marked_read",
+        event_type="alerts",
+        entity_type="alert",
+        entity_id=str(alert.id),
+        current_user=current_user,
+        patient_id=alert.patient_id,
+        summary="Alert marked as read",
+        details="A single alert was marked as read.",
+        context={"alert_type": alert.alert_type},
+    )
+
     return {"success": True}
 
 
@@ -268,6 +339,18 @@ def mark_all_alerts_read(
             {"is_read": True}, synchronize_session="fetch"
         )
     db.commit()
+
+    log_audit_event(
+        db,
+        action="alerts_marked_read_all",
+        event_type="alerts",
+        entity_type="alert",
+        current_user=current_user,
+        summary="All visible alerts marked as read",
+        details="All unread alerts linked to the actor were marked as read.",
+        context={"count": len(rel_ids)},
+    )
+
     return {"success": True}
 
 
@@ -303,6 +386,25 @@ async def sos_alert(
     db.commit()
     db.refresh(alert)
 
+    log_audit_event(
+        db,
+        action="sos_triggered",
+        event_type="alerts",
+        entity_type="alert",
+        entity_id=str(alert.id),
+        current_user=current_user,
+        patient_id=user_id,
+        summary="SOS alert triggered",
+        details="Patient triggered SOS and an emergency alert was created.",
+        context={
+            "priority": alert.priority,
+            "latitude": alert.latitude,
+            "longitude": alert.longitude,
+            "voice_transcription": bool(body.voice_transcription),
+        },
+        severity="critical",
+    )
+
     # Create alert relationships for all caregivers and family members
     relationships = create_alert_relationships(db, alert.id, user_id)
 
@@ -327,6 +429,23 @@ async def sos_alert(
         db.commit()
         db.refresh(sos_alert)
 
+        log_audit_event(
+            db,
+            action="sos_recorded",
+            event_type="alerts",
+            entity_type="sos_alert",
+            entity_id=str(sos_alert.id),
+            current_user=current_user,
+            patient_id=user_id,
+            summary="SOS emergency record created",
+            details="An SOS event was persisted for emergency workflow.",
+            context={
+                "sos_case": sos_case,
+                "priority": sos_alert.priority,
+            },
+            severity="critical",
+        )
+
     if sos_case == "SOS_REPEAT":
         alert.is_added_to_emergency = True
         db.add(alert)
@@ -341,6 +460,23 @@ async def sos_alert(
         create_budii_alert_relationships(db, patient_alert.id, user_id)
         db.commit()
         db.refresh(patient_alert)
+
+        log_audit_event(
+            db,
+            action="sos_escalated",
+            event_type="alerts",
+            entity_type="patient_alert",
+            entity_id=str(patient_alert.id),
+            current_user=current_user,
+            patient_id=user_id,
+            summary="SOS escalated to emergency workflow",
+            details="Repeated SOS promoted to emergency queue and notifications were sent.",
+            context={
+                "sos_case": sos_case,
+                "source_alert_id": str(alert.id),
+            },
+            severity="critical",
+        )
 
         # Push to Firebase
         pa_dict = patient_alert.to_dict()

@@ -8,6 +8,7 @@ from app.models.user import User
 from app.models.token import Token
 from app.jwt_utils import generate_token_pair, rotate_tokens, verify_access_token, revoke_user_tokens
 from app.auth import get_current_user
+from app.services.audit_log_service import log_audit_event, build_field_changes
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -38,6 +39,21 @@ def signup(body: dict, db: Session = Depends(get_db)):
 
     tokens = generate_token_pair(db, str(user.id), user.role,
                                  str(user.corporate_id) if user.corporate_id else None)
+
+    log_audit_event(
+        db,
+        action="auth_signup_completed",
+        event_type="auth",
+        entity_type="user",
+        entity_id=str(user.id),
+        user_id=user.id,
+        summary="New user signup completed",
+        details="A new user account was created via signup.",
+        context={
+            "email": user.email,
+            "role": user.role,
+        },
+    )
 
     return {
         **tokens,
@@ -70,6 +86,21 @@ def login(body: dict, db: Session = Depends(get_db)):
     tokens = generate_token_pair(db, str(user.id), user.role,
                                  str(user.corporate_id) if user.corporate_id else None)
 
+    log_audit_event(
+        db,
+        action="auth_login_succeeded",
+        event_type="auth",
+        entity_type="user",
+        entity_id=str(user.id),
+        user_id=user.id,
+        summary="User login succeeded",
+        details="User credentials were validated and a token pair was issued.",
+        context={
+            "email": user.email,
+            "role": user.role,
+        },
+    )
+
     return {
         **tokens,
         "user": {
@@ -96,6 +127,15 @@ def complete_invite(body: dict, current_user: dict = Depends(get_current_user), 
         raise HTTPException(400, "User is not in invited state")
 
     new_password = body.get("new_password")
+    before = {
+        "full_name": user.full_name,
+        "status": user.status,
+        "phone_country": user.phone_country,
+        "phone_number": user.phone_number,
+        "address": user.address,
+        "password": "***" if user.password else None,
+    }
+
     if new_password:
         user.password = pwd_context.hash(new_password)
     if body.get("full_name"):
@@ -113,6 +153,36 @@ def complete_invite(body: dict, current_user: dict = Depends(get_current_user), 
 
     tokens = generate_token_pair(db, str(user.id), user.role,
                                  str(user.corporate_id) if user.corporate_id else None)
+
+    after = {
+        "full_name": user.full_name,
+        "status": user.status,
+        "phone_country": user.phone_country,
+        "phone_number": user.phone_number,
+        "address": user.address,
+        "password": "***" if user.password else None,
+    }
+    changes = build_field_changes(
+        before,
+        after,
+        ["full_name", "status", "phone_country", "phone_number", "address", "password"],
+    )
+
+    log_audit_event(
+        db,
+        action="auth_invite_completed",
+        event_type="auth",
+        entity_type="user",
+        entity_id=str(user.id),
+        user_id=user.id,
+        summary="Invited user completed account setup",
+        details="Invite acceptance finished and account status became active.",
+        context={
+            "email": user.email,
+            "role": user.role,
+        },
+        changes=changes,
+    )
 
     return {
         **tokens,
@@ -137,6 +207,15 @@ def refresh(body: dict, db: Session = Depends(get_db)):
         raise HTTPException(400, "refreshToken is required")
     try:
         tokens = rotate_tokens(db, refresh_token)
+        log_audit_event(
+            db,
+            action="auth_token_refreshed",
+            event_type="auth",
+            entity_type="session",
+            summary="Access token refreshed",
+            details="Refresh token was exchanged for a new token pair.",
+            context={"token_flow": "refresh"},
+        )
         return tokens
     except ValueError as e:
         raise HTTPException(401, str(e))
@@ -153,6 +232,17 @@ def logout(body: dict = None, db: Session = Depends(get_db),
         try:
             payload = verify_access_token(db, token_str)
             revoke_user_tokens(db, payload["userId"], payload["tokenId"])
+            log_audit_event(
+                db,
+                action="auth_logout",
+                event_type="auth",
+                entity_type="session",
+                user_id=payload.get("userId"),
+                entity_id=str(payload.get("tokenId")) if payload.get("tokenId") else None,
+                summary="User logged out",
+                details="All active user tokens were revoked using access token context.",
+                context={"logout_via": "access_token"},
+            )
             return {"message": "Logged out successfully"}
         except Exception:
             pass
@@ -169,6 +259,16 @@ def logout(body: dict = None, db: Session = Depends(get_db),
                 Token.is_revoked == False,
             ).update({"is_revoked": True})
             db.commit()
+            log_audit_event(
+                db,
+                action="auth_logout",
+                event_type="auth",
+                entity_type="session",
+                user_id=record.user_id,
+                summary="User logged out",
+                details="All active user tokens were revoked using refresh token context.",
+                context={"logout_via": "refresh_token"},
+            )
 
     return {"message": "Logged out successfully"}
 

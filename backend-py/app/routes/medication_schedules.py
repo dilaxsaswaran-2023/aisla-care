@@ -10,6 +10,7 @@ from app.models.medication_schedule import MedicationSchedule
 from app.models.medication_schedule_monitor import MedicationScheduleMonitor
 from app.auth import get_current_user
 from app.models.user import User
+from app.services.audit_log_service import log_audit_event, build_field_changes
 
 router = APIRouter(prefix="/api/medication-schedules", tags=["medication-schedules"])
 
@@ -308,6 +309,25 @@ def create_medication_schedule(
     db.add(schedule)
     db.commit()
     db.refresh(schedule)
+
+    log_audit_event(
+        db,
+        action="medication_schedule_created",
+        event_type="medication",
+        entity_type="medication_schedule",
+        entity_id=str(schedule.id),
+        current_user=current_user,
+        patient_id=schedule.patient_id,
+        summary="Medication schedule created",
+        details="A medication schedule was created for a patient.",
+        context={
+            "name": schedule.name,
+            "schedule_type": schedule.schedule_type,
+            "urgency_level": schedule.urgency_level,
+            "times": schedule.scheduled_times,
+        },
+    )
+
     return schedule.to_dict()
 
 # PATCH /api/medication-schedules/{id} - Update medication schedule
@@ -329,6 +349,21 @@ def update_medication_schedule(
 
     if not _has_patient_access(db, current_user, schedule.patient_id):
         raise HTTPException(status_code=403, detail="Access denied")
+
+    before = {
+        "name": schedule.name,
+        "description": schedule.description,
+        "prescription": schedule.prescription,
+        "schedule_type": schedule.schedule_type,
+        "scheduled_times": schedule.scheduled_times,
+        "days_of_week": schedule.days_of_week,
+        "meal_timing": schedule.meal_timing,
+        "dosage_type": schedule.dosage_type,
+        "dosage_count": schedule.dosage_count,
+        "urgency_level": schedule.urgency_level,
+        "grace_period_minutes": schedule.grace_period_minutes,
+        "is_active": schedule.is_active,
+    }
 
     # Validate schedule_type
     if body.schedule_type and body.schedule_type not in ["daily", "weekly", "selective"]:
@@ -370,6 +405,54 @@ def update_medication_schedule(
     schedule.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(schedule)
+
+    after = {
+        "name": schedule.name,
+        "description": schedule.description,
+        "prescription": schedule.prescription,
+        "schedule_type": schedule.schedule_type,
+        "scheduled_times": schedule.scheduled_times,
+        "days_of_week": schedule.days_of_week,
+        "meal_timing": schedule.meal_timing,
+        "dosage_type": schedule.dosage_type,
+        "dosage_count": schedule.dosage_count,
+        "urgency_level": schedule.urgency_level,
+        "grace_period_minutes": schedule.grace_period_minutes,
+        "is_active": schedule.is_active,
+    }
+    changes = build_field_changes(
+        before,
+        after,
+        [
+            "name",
+            "description",
+            "prescription",
+            "schedule_type",
+            "scheduled_times",
+            "days_of_week",
+            "meal_timing",
+            "dosage_type",
+            "dosage_count",
+            "urgency_level",
+            "grace_period_minutes",
+            "is_active",
+        ],
+    )
+
+    log_audit_event(
+        db,
+        action="medication_schedule_updated",
+        event_type="medication",
+        entity_type="medication_schedule",
+        entity_id=str(schedule.id),
+        current_user=current_user,
+        patient_id=schedule.patient_id,
+        summary="Medication schedule updated",
+        details="Medication schedule settings were updated.",
+        changes=changes,
+        context={"name": schedule.name},
+    )
+
     return schedule.to_dict()
 
 # DELETE /api/medication-schedules/{id} - Delete medication schedule
@@ -391,8 +474,29 @@ def delete_medication_schedule(
     if not _has_patient_access(db, current_user, schedule.patient_id):
         raise HTTPException(status_code=403, detail="Access denied")
 
+    context = {
+        "name": schedule.name,
+        "schedule_type": schedule.schedule_type,
+        "patient_id": str(schedule.patient_id),
+    }
+
     db.delete(schedule)
     db.commit()
+
+    log_audit_event(
+        db,
+        action="medication_schedule_deleted",
+        event_type="medication",
+        entity_type="medication_schedule",
+        entity_id=schedule_id,
+        current_user=current_user,
+        patient_id=context["patient_id"],
+        summary="Medication schedule deleted",
+        details="A medication schedule was removed.",
+        context=context,
+        severity="warning",
+    )
+
     return {"success": True}
 
 
@@ -418,6 +522,23 @@ def toggle_medication_schedule_active(
     schedule.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(schedule)
+
+    log_audit_event(
+        db,
+        action="medication_schedule_toggled",
+        event_type="medication",
+        entity_type="medication_schedule",
+        entity_id=str(schedule.id),
+        current_user=current_user,
+        patient_id=schedule.patient_id,
+        summary="Medication schedule activation toggled",
+        details="Medication schedule active state was toggled.",
+        context={
+            "name": schedule.name,
+            "is_active": str(schedule.is_active),
+        },
+    )
+
     return {"success": True, "is_active": schedule.is_active}
 
 
@@ -503,4 +624,24 @@ def mark_medication_taken(
 
     db.commit()
     db.refresh(monitor)
+
+    log_audit_event(
+        db,
+        action="medication_marked_taken",
+        event_type="medication",
+        entity_type="medication_schedule_monitor",
+        entity_id=str(monitor.id),
+        current_user=current_user,
+        patient_id=schedule.patient_id,
+        summary="Medication dose marked as taken",
+        details="A scheduled medication dose was marked as taken.",
+        context={
+            "schedule_id": str(schedule.id),
+            "schedule_name": schedule.name,
+            "scheduled_for_at": scheduled_for_at.isoformat(),
+            "taken_at": taken_at.isoformat(),
+            "status": monitor.status,
+        },
+    )
+
     return {"success": True, "monitor": monitor.to_dict()}

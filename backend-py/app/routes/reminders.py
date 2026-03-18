@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.reminder import Reminder
 from app.auth import get_current_user
+from app.services.audit_log_service import log_audit_event
 
 router = APIRouter(prefix="/api/reminders", tags=["reminders"])
 
@@ -43,6 +44,23 @@ def create_reminder(
     db.add(reminder)
     db.commit()
     db.refresh(reminder)
+
+    log_audit_event(
+        db,
+        action="reminder_created",
+        event_type="reminders",
+        entity_type="reminder",
+        entity_id=str(reminder.id),
+        current_user=current_user,
+        patient_id=reminder.patient_id,
+        summary="Reminder created",
+        details="A reminder was created for a patient.",
+        context={
+            "title": reminder.title,
+            "scheduled_time": reminder.scheduled_time.isoformat() if reminder.scheduled_time else None,
+        },
+    )
+
     return reminder.to_dict()
 
 
@@ -59,4 +77,21 @@ def complete_reminder(
     reminder.completed_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(reminder)
+
+    log_audit_event(
+        db,
+        action="reminder_completed",
+        event_type="reminders",
+        entity_type="reminder",
+        entity_id=str(reminder.id),
+        current_user=current_user,
+        patient_id=reminder.patient_id,
+        summary="Reminder marked complete",
+        details="A reminder completion was recorded.",
+        context={
+            "title": reminder.title,
+            "completed_at": reminder.completed_at.isoformat() if reminder.completed_at else None,
+        },
+    )
+
     return reminder.to_dict()

@@ -9,6 +9,7 @@ from app.models.budii_alert_relationship import BudiiAlertRelationship
 from app.models.user import User
 from app.auth import get_current_user
 from app.services.budii_alert_relationship_service import create_budii_alert_relationships
+from app.services.audit_log_service import log_audit_event, build_field_changes
 
 router = APIRouter(prefix="/api/budii-alerts", tags=["budii-alerts"])
 
@@ -121,6 +122,22 @@ def create_budii_alert(
     db.commit()
     db.refresh(alert)
 
+    log_audit_event(
+        db,
+        action="budii_alert_created",
+        event_type="budii_alerts",
+        entity_type="patient_alert",
+        entity_id=str(alert.id),
+        current_user=current_user,
+        patient_id=alert.patient_id,
+        summary="Budii alert created",
+        details="A Budii-generated alert was created for a patient.",
+        context={
+            "alert_type": alert.alert_type,
+            "event_id": alert.event_id,
+        },
+    )
+
     # Create alert relationships for all caregivers and family members
     relationships = create_budii_alert_relationships(db, alert.id, patient_id)
 
@@ -144,12 +161,43 @@ def update_budii_alert(
     if not alert:
         raise HTTPException(404, "Patient alert not found")
 
+    before = {
+        "status": getattr(alert, "status", None),
+        "message": getattr(alert, "message", None),
+        "title": getattr(alert, "title", None),
+        "case": getattr(alert, "case", None),
+        "alert_type": getattr(alert, "alert_type", None),
+    }
+
     for key in ["status", "message", "title", "case", "alert_type"]:
         if key in body:
             setattr(alert, key, body[key])
 
     db.commit()
     db.refresh(alert)
+
+    after = {
+        "status": getattr(alert, "status", None),
+        "message": getattr(alert, "message", None),
+        "title": getattr(alert, "title", None),
+        "case": getattr(alert, "case", None),
+        "alert_type": getattr(alert, "alert_type", None),
+    }
+    changes = build_field_changes(before, after, ["status", "message", "title", "case", "alert_type"])
+
+    log_audit_event(
+        db,
+        action="budii_alert_updated",
+        event_type="budii_alerts",
+        entity_type="patient_alert",
+        entity_id=str(alert.id),
+        current_user=current_user,
+        patient_id=alert.patient_id,
+        summary="Budii alert updated",
+        details="A Budii alert was updated.",
+        changes=changes,
+    )
+
     return alert.to_dict()
 
 
@@ -175,6 +223,19 @@ def mark_budii_alert_read(
     alert.is_read = True
     db.add(alert)
     db.commit()
+
+    log_audit_event(
+        db,
+        action="budii_alert_marked_read",
+        event_type="budii_alerts",
+        entity_type="patient_alert",
+        entity_id=str(alert.id),
+        current_user=current_user,
+        patient_id=alert.patient_id,
+        summary="Budii alert marked as read",
+        details="A single Budii alert was marked as read.",
+    )
+
     return {"success": True}
 
 
@@ -200,4 +261,16 @@ def mark_all_budii_alerts_read(
             {"is_read": True}, synchronize_session="fetch"
         )
     db.commit()
+
+    log_audit_event(
+        db,
+        action="budii_alerts_marked_read_all",
+        event_type="budii_alerts",
+        entity_type="patient_alert",
+        current_user=current_user,
+        summary="All Budii alerts marked as read",
+        details="All unread Budii alerts linked to the actor were marked as read.",
+        context={"count": len(rel_ids)},
+    )
+
     return {"success": True}

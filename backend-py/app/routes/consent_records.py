@@ -6,6 +6,7 @@ from app.database import get_db
 from app.models.consent_record import ConsentRecord
 from app.models.user import User
 from app.auth import get_current_user
+from app.services.audit_log_service import log_audit_event
 
 router = APIRouter(prefix="/api/consent-records", tags=["consent-records"])
 
@@ -48,4 +49,23 @@ def create_consent_record(
     db.add(record)
     db.commit()
     db.refresh(record)
+
+    log_audit_event(
+        db,
+        action="consent_granted",
+        event_type="consent",
+        entity_type="consent_record",
+        entity_id=str(record.id),
+        current_user=current_user,
+        patient_id=record.patient_id,
+        summary="Consent record created",
+        details="A consent access record was created or updated.",
+        context={
+            "consent_type": record.consent_type,
+            "granted_to": str(record.granted_to),
+            "status": record.status,
+            "expires_at": record.expires_at.isoformat() if record.expires_at else None,
+        },
+    )
+
     return record.to_dict()

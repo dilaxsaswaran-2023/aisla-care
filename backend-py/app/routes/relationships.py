@@ -6,6 +6,7 @@ from app.database import get_db
 from app.models.relationship import Relationship
 from app.models.user import User
 from app.auth import get_current_user, RoleChecker
+from app.services.audit_log_service import log_audit_event
 
 router = APIRouter(prefix="/api/relationships", tags=["relationships"])
 
@@ -134,6 +135,23 @@ def create_relationship(
     db.add(rel)
     db.commit()
     db.refresh(rel)
+
+    log_audit_event(
+        db,
+        action="relationship_created",
+        event_type="relationships",
+        entity_type="relationship",
+        entity_id=str(rel.id),
+        current_user=current_user,
+        patient_id=rel.patient_id,
+        summary="Relationship created",
+        details="A relationship was created between a patient and another user.",
+        context={
+            "related_user_id": str(rel.related_user_id),
+            "relationship_type": rel.relationship_type,
+        },
+    )
+
     return rel.to_dict()
 
 
@@ -147,6 +165,28 @@ def delete_relationship(
     rel = db.query(Relationship).filter(Relationship.id == uuid.UUID(rel_id)).first()
     if not rel:
         raise HTTPException(404, "Relationship not found")
+
+    context = {
+        "patient_id": str(rel.patient_id),
+        "related_user_id": str(rel.related_user_id),
+        "relationship_type": rel.relationship_type,
+    }
+
     db.delete(rel)
     db.commit()
+
+    log_audit_event(
+        db,
+        action="relationship_deleted",
+        event_type="relationships",
+        entity_type="relationship",
+        entity_id=rel_id,
+        current_user=current_user,
+        patient_id=context["patient_id"],
+        summary="Relationship removed",
+        details="A patient relationship was deleted.",
+        context=context,
+        severity="warning",
+    )
+
     return {"success": True}

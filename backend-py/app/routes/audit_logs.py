@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import or_, cast, String
 
 from app.database import get_db
 from app.models.audit_log import AuditLog
@@ -34,6 +35,7 @@ def _parse_uuid(value: str, field_name: str) -> uuid.UUID:
 # GET /api/audit-logs
 @router.get("/")
 def list_audit_logs(
+    q: str = Query(None),
     userId: str = Query(None),
     patientId: str = Query(None),
     caregiverId: str = Query(None),
@@ -57,6 +59,19 @@ def list_audit_logs(
         query = query.filter(AuditLog.event_type == eventType)
     if source:
         query = query.filter(AuditLog.source == source)
+    if q:
+        pattern = f"%{q.strip()}%"
+        query = query.filter(or_(
+            AuditLog.action.ilike(pattern),
+            AuditLog.event_type.ilike(pattern),
+            AuditLog.entity_type.ilike(pattern),
+            AuditLog.entity_id.ilike(pattern),
+            AuditLog.source.ilike(pattern),
+            cast(AuditLog.user_id, String).ilike(pattern),
+            cast(AuditLog.patient_id, String).ilike(pattern),
+            cast(AuditLog.caregiver_id, String).ilike(pattern),
+            cast(AuditLog.metadata_, String).ilike(pattern),
+        ))
     if dateFrom:
         query = query.filter(AuditLog.created_at >= _parse_datetime(dateFrom))
     if dateTo:

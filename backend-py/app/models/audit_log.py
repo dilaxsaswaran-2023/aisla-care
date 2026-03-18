@@ -25,6 +25,7 @@ class AuditLog(Base):
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     def to_dict(self):
+        metadata = self.metadata_ or {}
         return {
             "id": str(self.id),
             "_id": str(self.id),
@@ -36,7 +37,15 @@ class AuditLog(Base):
             "entity_type": self.entity_type,
             "entity_id": self.entity_id,
             "source": self.source,
-            "metadata": self.metadata_,
+            "metadata": metadata,
+            "summary": metadata.get("summary"),
+            "details": metadata.get("details"),
+            "severity": metadata.get("severity"),
+            "outcome": metadata.get("outcome"),
+            "context": metadata.get("context"),
+            "changed_fields": metadata.get("changed_fields"),
+            "change_count": metadata.get("change_count"),
+            "changes": metadata.get("changes"),
             "ip_address": self.ip_address,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,

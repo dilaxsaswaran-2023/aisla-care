@@ -10,6 +10,7 @@ from app.database import get_db
 from app.models.user import User
 from app.models.relationship import Relationship
 from app.auth import get_current_user, RoleChecker
+from app.services.audit_log_service import log_audit_event, build_field_changes
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -507,6 +508,25 @@ def create_user(
                 db.add(rel)
         db.commit()
 
+    log_audit_event(
+        db,
+        action="user_created",
+        event_type="user_management",
+        entity_type="user",
+        entity_id=str(user.id),
+        current_user=current_user,
+        patient_id=user.id if user.role == "patient" else None,
+        caregiver_id=user.id if user.role == "caregiver" else None,
+        summary="User account created",
+        details="A user record was created from the admin user management flow.",
+        context={
+            "created_role": user.role,
+            "email": user.email,
+            "status": user.status,
+            "corporate_id": str(user.corporate_id) if user.corporate_id else None,
+        },
+    )
+
     return {
         "id": str(user.id),
         "email": user.email,
@@ -547,6 +567,24 @@ def update_user_status(
 
     target.status = status
     db.commit()
+
+    log_audit_event(
+        db,
+        action="user_status_updated",
+        event_type="user_management",
+        entity_type="user",
+        entity_id=str(target.id),
+        current_user=current_user,
+        patient_id=target.id if target.role == "patient" else None,
+        caregiver_id=target.id if target.role == "caregiver" else None,
+        summary="User status changed",
+        details="A user's status was updated by an authorized admin user.",
+        context={
+            "email": target.email,
+            "new_status": target.status,
+        },
+    )
+
     return {"success": True, "id": str(target.id), "status": target.status}
 
 
@@ -574,6 +612,19 @@ def update_user(
                 raise HTTPException(status_code=403, detail="You can only update users under your organization")
         else:
             raise HTTPException(status_code=403, detail="You can only update your own details")
+
+    before = {
+        "full_name": target.full_name,
+        "email": target.email,
+        "phone_country": target.phone_country,
+        "phone_number": target.phone_number,
+        "address": target.address,
+        "caregiver_type": target.caregiver_type,
+        "caregiver_subtype": target.caregiver_subtype,
+        "caregiver_id": str(target.caregiver_id) if target.caregiver_id else None,
+        "caregiver_ids": [str(cid) for cid in target.caregiver_ids] if target.caregiver_ids else [],
+        "family_ids": [str(fid) for fid in target.family_ids] if target.family_ids else [],
+    }
 
     if body.get("full_name"):
         target.full_name = body["full_name"]
@@ -638,6 +689,53 @@ def update_user(
     db.commit()
     db.refresh(target)
 
+    after = {
+        "full_name": target.full_name,
+        "email": target.email,
+        "phone_country": target.phone_country,
+        "phone_number": target.phone_number,
+        "address": target.address,
+        "caregiver_type": target.caregiver_type,
+        "caregiver_subtype": target.caregiver_subtype,
+        "caregiver_id": str(target.caregiver_id) if target.caregiver_id else None,
+        "caregiver_ids": [str(cid) for cid in target.caregiver_ids] if target.caregiver_ids else [],
+        "family_ids": [str(fid) for fid in target.family_ids] if target.family_ids else [],
+    }
+    changes = build_field_changes(
+        before,
+        after,
+        [
+            "full_name",
+            "email",
+            "phone_country",
+            "phone_number",
+            "address",
+            "caregiver_type",
+            "caregiver_subtype",
+            "caregiver_id",
+            "caregiver_ids",
+            "family_ids",
+        ],
+    )
+
+    log_audit_event(
+        db,
+        action="user_updated",
+        event_type="user_management",
+        entity_type="user",
+        entity_id=str(target.id),
+        current_user=current_user,
+        patient_id=target.id if target.role == "patient" else None,
+        caregiver_id=target.id if target.role == "caregiver" else None,
+        summary="User profile updated",
+        details="User profile fields were changed from the user management flow.",
+        context={
+            "email": target.email,
+            "role": target.role,
+        },
+        changes=changes,
+    )
+
     return {
         "id": str(target.id),
         "email": target.email,
@@ -672,6 +770,25 @@ def delete_user(
     if str(target.id) == current_user["userId"]:
         raise HTTPException(status_code=400, detail="Cannot delete your own account")
 
+    deleted_context = {
+        "email": target.email,
+        "role": target.role,
+        "full_name": target.full_name,
+    }
     db.delete(target)
     db.commit()
+
+    log_audit_event(
+        db,
+        action="user_deleted",
+        event_type="user_management",
+        entity_type="user",
+        entity_id=user_id,
+        current_user=current_user,
+        summary="User account deleted",
+        details="A user account was removed by an authorized admin user.",
+        context=deleted_context,
+        severity="warning",
+    )
+
     return {"success": True}

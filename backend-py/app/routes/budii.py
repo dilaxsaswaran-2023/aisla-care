@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.budii_alert import PatientAlert
+from app.services.audit_log_service import log_audit_event
 
 logger = logging.getLogger("aisla.budii")
 
@@ -75,6 +76,23 @@ async def receive_budii_alert(
             await sio.emit("new_alert", alert_data)
 
     db.commit()
+
+    for created in created_alerts:
+        log_audit_event(
+            db,
+            action="budii_internal_alert_created",
+            event_type="budii_alerts",
+            entity_type="patient_alert",
+            entity_id=created.get("id"),
+            patient_id=payload.patient_id,
+            summary="Budii internal alert created",
+            details="Internal Budii ingestion created a patient alert entry.",
+            context={
+                "event_id": payload.event_id,
+                "alert_type": created.get("alert_type"),
+                "source": "internal_budii",
+            },
+        )
 
     return {
         "status": "received",
