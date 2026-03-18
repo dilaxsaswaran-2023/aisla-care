@@ -208,7 +208,7 @@ def start_medication_scheduler():
     scheduler.add_job(
         run_medication_check_for_all_patients,
         "interval",
-        seconds=1800,
+        seconds=60,
         id="medication_check",
         name="Medication Check Every 30 Minutes",
         replace_existing=True,

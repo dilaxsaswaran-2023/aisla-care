@@ -11,8 +11,10 @@ from app.config import get_settings
 from app.database import engine, Base, SessionLocal
 from app.jwt_utils import init_jwt_secret
 from app.jwt_utils import verify_access_token
-from app.seeder import seed_super_admin
+from app.seeder import seed_super_admin, seed_patient_activity_schedule
 from app.services.geofence_scheduler import start_scheduler, stop_scheduler
+from app.services.human_detection_scheduler import start_human_detection_scheduler
+from app.services.inactivity_scheduler import start_inactivity_scheduler
 from app.services.medication_scheduler import start_medication_scheduler, stop_medication_scheduler
 
 # Initialize logging as early as possible
@@ -60,9 +62,14 @@ async def lifespan(app: FastAPI):
         try:
             init_jwt_secret(db)
             seed_super_admin(db)
+            seed_patient_activity_schedule(db)
         finally:
             db.close()
         logger.info("[DB] JWT secret and super-admin initialized")
+
+        if settings.check_inactive_enabled:
+            start_human_detection_scheduler()
+            logger.info("[Scheduler] activity write scheduler started")
         
         # Start background geofence scheduler
         if settings.check_geofence_enabled:
@@ -73,6 +80,10 @@ async def lifespan(app: FastAPI):
         if settings.check_medication_enabled:
             start_medication_scheduler()
             logger.info("[Scheduler] Medication scheduler started")
+
+        if settings.check_inactive_enabled:    
+            start_inactivity_scheduler()
+            logger.info("[Scheduler] inactivity check scheduler started")
     except Exception as e:
         logger.warning(f"[WARN] Database initialization error: {type(e).__name__}: {e}")
 

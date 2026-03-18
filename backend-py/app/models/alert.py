@@ -13,7 +13,7 @@ class Alert(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     patient_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
     alert_type = Column(
-        Enum("sos", "fall", "geofence", "inactivity", "health", name="alert_type_enum"),
+        Enum("sos", "fall", "geofence", "inactivity", "health","medication", name="alert_type_enum"),
         nullable=False,
     )
     status = Column(String, nullable=False, default="active", index=True)
