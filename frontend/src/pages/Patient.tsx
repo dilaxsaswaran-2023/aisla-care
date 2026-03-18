@@ -10,6 +10,7 @@ import ChatInterface from "@/components/chat/ChatInterface";
 import VoiceCall from "@/components/communication/VoiceCall";
 import SOSPopup from "@/components/patient/SOSPopup";
 import { Badge } from "@/components/ui/badge";
+import { formatTime, getTodayLocalDateString } from "@/lib/datetime";
 
 interface Relationship {
   id: string;
@@ -119,7 +120,7 @@ const Patient = () => {
     if (!user?.id) return;
     setLoadingMedication(true);
     try {
-      const today = new Date().toISOString().slice(0, 10);
+      const today = getTodayLocalDateString();
       const data = await api.get(`/medication-schedules/monitor?patient_id=${user.id}&date=${today}`) as {
         items?: MedicationMonitorItem[];
       };
@@ -311,7 +312,7 @@ const Patient = () => {
                           </div>
                           {item.taken_at && (
                             <p className="text-xs text-green-600 mt-1">
-                              Taken at {new Date(item.taken_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              Taken at {formatTime(item.taken_at)}
                             </p>
                           )}
                         </div>

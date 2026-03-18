@@ -2,6 +2,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { AlertCircle, Clock, CheckCircle, RefreshCw } from "lucide-react";
+import { formatRelativeTime, parseDateTime } from "@/lib/datetime";
 
 interface AlertItem {
   id: string;
@@ -14,16 +15,6 @@ interface AlertItem {
   patient_name?: string;
   created_at: string;
   source?: string; // 'normal' or 'budii'
-}
-
-function formatRelativeTime(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "Just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
 }
 
 function alertStyle(source?: string) {
@@ -86,7 +77,7 @@ export const CaregiverAlerts = ({
 }: CaregiverAlertsProps) => {
   // Sort alerts by created_at descending (most recent first)
   const sortedAlerts = [...alerts].sort((a, b) => 
-    new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    (parseDateTime(b.created_at)?.getTime() || 0) - (parseDateTime(a.created_at)?.getTime() || 0)
   );
 
   return (

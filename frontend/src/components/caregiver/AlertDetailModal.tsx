@@ -1,6 +1,7 @@
 import { createPortal } from "react-dom";
 import { AlertCircle, RefreshCw, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { formatDateTime } from "@/lib/datetime";
 
 interface AlertItem {
   id: string;
@@ -88,7 +89,7 @@ export const AlertDetailModal = ({
               </div>
             )}
             <div className="pt-1 border-t border-border">
-              <p className="text-[11px] text-muted-foreground">{new Date(detail.created_at).toLocaleString()}</p>
+              <p className="text-[11px] text-muted-foreground">{formatDateTime(detail.created_at)}</p>
             </div>
           </div>
         ) : (

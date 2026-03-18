@@ -1,5 +1,6 @@
 import { AlertCircle, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { formatTime } from '@/lib/datetime';
 
 interface AlertItem {
   id: string;
@@ -23,11 +24,6 @@ interface FamilyAlertBannerProps {
 
 export const FamilyAlertBanner = ({ alert, onClose }: FamilyAlertBannerProps) => {
   if (!alert) return null;
-
-  const formatTime = (dateStr: string) => {
-    const date = new Date(dateStr);
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
 
   // Determine alert type label - family-focused messaging
   const alertTypeLabel = alert.alert_type === 'sos' 

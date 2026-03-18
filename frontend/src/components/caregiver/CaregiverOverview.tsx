@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   AlertCircle, Bell, Users, BotMessageSquare, Cpu, Clock, CheckCircle, Construction, RefreshCw,
 } from "lucide-react";
+import { formatRelativeTime, parseDateTime } from "@/lib/datetime";
 
 interface AlertItem {
   id: string;
@@ -20,17 +21,6 @@ interface AlertItem {
 }
 
 interface Contact { id: string; name: string; }
-
-function formatRelativeTime(iso: string): string {
-  const istOffset = 5.5 * 60 * 60 * 1000; // +5:30 hours in milliseconds
-  const diff = Date.now() - (new Date(iso).getTime() + istOffset);
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "Just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
-}
 
 function alertStyle(source?: string) {
   // Budii alerts always use red
@@ -118,7 +108,7 @@ export const CaregiverOverview = ({
 }: CaregiverOverviewProps) => {
   // Combine and sort alerts by created_at descending
   const allAlerts = [...alerts, ...budiiAlerts].sort((a, b) => 
-    new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    (parseDateTime(b.created_at)?.getTime() || 0) - (parseDateTime(a.created_at)?.getTime() || 0)
   );
   return (
     <div className="space-y-6">

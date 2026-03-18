@@ -3,6 +3,7 @@ import { api } from '@/lib/api';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { AlertCircle, MessageSquare, Activity, Bell, User } from 'lucide-react';
+import { formatDateTime } from '@/lib/datetime';
 
 interface Event {
   id: string;
@@ -67,7 +68,7 @@ const EventTimeline = ({ patientId }: EventTimelineProps) => {
                 )}
               </div>
               <div className="text-xs text-muted-foreground">
-                {new Date(event.created_at).toLocaleString()}
+                {formatDateTime(event.created_at)}
               </div>
               {event.metadata && Object.keys(event.metadata).length > 0 && (
                 <div className="text-xs text-muted-foreground mt-1 p-2 bg-muted rounded">

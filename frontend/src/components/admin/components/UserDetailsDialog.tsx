@@ -1,5 +1,6 @@
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { formatDateTime } from '@/lib/datetime';
 
 interface UserDetailsDialogProps {
   open: boolean;
@@ -148,11 +149,11 @@ export const UserDetailsDialog = ({
               <div className="pt-2 border-t border-muted/30 text-xs">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Created</span>
-                  <span>{selectedUser.created_at ? new Date(selectedUser.created_at).toLocaleString() : '—'}</span>
+                  <span>{selectedUser.created_at ? formatDateTime(selectedUser.created_at) : '—'}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Last updated</span>
-                  <span>{selectedUser.updated_at ? new Date(selectedUser.updated_at).toLocaleString() : '—'}</span>
+                  <span>{selectedUser.updated_at ? formatDateTime(selectedUser.updated_at) : '—'}</span>
                 </div>
               </div>
             </div>

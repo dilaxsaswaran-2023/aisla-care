@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { LayoutDashboard, Shield, Plus, Trash2, Users, UserCheck } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { formatDate } from '@/lib/datetime';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface AdminUser {
@@ -307,7 +308,7 @@ const SuperAdmin = () => {
                         <Badge variant="secondary" className="text-xs">admin</Badge>
                       </TableCell>
                       <TableCell className="text-muted-foreground text-xs">
-                        {admin.createdAt ? new Date(admin.createdAt).toLocaleDateString() : '—'}
+                        {admin.createdAt ? formatDate(admin.createdAt) : '—'}
                       </TableCell>
                       <TableCell className="text-right">
                         <AlertDialog>

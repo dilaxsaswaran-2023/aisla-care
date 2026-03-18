@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useFirebaseAlerts } from "@/hooks/useFirebaseAlerts";
+import { formatDateTime } from "@/lib/datetime";
 
 /**
  * Test component to verify Firebase real-time listener works.
@@ -48,7 +49,7 @@ export const FirebaseTestComponent = () => {
               <div key={alert.id} className="text-xs p-2 bg-gray-50 border rounded">
                 <p><strong>{alert.patient_name}</strong> - {alert.title}</p>
                 <p className="text-gray-600">{alert.message}</p>
-                <p className="text-gray-500 italic">{new Date(alert.created_at).toLocaleString()}</p>
+                <p className="text-gray-500 italic">{formatDateTime(alert.created_at)}</p>
               </div>
             ))}
           </div>

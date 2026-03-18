@@ -1,5 +1,6 @@
 import { AlertCircle, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { formatTime } from '@/lib/datetime';
 
 interface AlertItem {
   id: string;
@@ -23,11 +24,6 @@ interface EmergencyBannerProps {
 
 export const EmergencyBanner = ({ alert, onClose }: EmergencyBannerProps) => {
   if (!alert) return null;
-
-  const formatTime = (dateStr: string) => {
-    const date = new Date(dateStr);
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
 
   // Determine alert type label
   const alertTypeLabel = alert.alert_type === 'sos' ? '🚨 SOS ALERT' : '⚠️ GEOFENCE BREACH';

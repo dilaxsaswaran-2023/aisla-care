@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { RefreshCw, AlertCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { formatDateTime } from '@/lib/datetime';
 
 // Fix Leaflet default icons
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -190,7 +191,7 @@ export const CaregiverLocation = () => {
                         )}
                         {loc.updated_at && (
                           <div className="text-xs text-muted-foreground">
-                            {new Date(loc.updated_at).toLocaleString()}
+                            {formatDateTime(loc.updated_at)}
                           </div>
                         )}
                       </div>

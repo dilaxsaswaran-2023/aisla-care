@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { addDoc, collection, getDocs, onSnapshot, query, where, writeBatch } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { ensureFirebaseAuthReady } from "@/lib/firebase";
+import { parseDateTime } from "@/lib/datetime";
 
 export interface FirebaseChatNotification {
   id: string;
@@ -42,7 +43,7 @@ export function useFirebaseChatNotifications(userId: string | null, activePartne
           }))
           .filter((item) => item.recipient_id === userId);
 
-        docs.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        docs.sort((a, b) => (parseDateTime(b.created_at)?.getTime() || 0) - (parseDateTime(a.created_at)?.getTime() || 0));
         setNotifications(docs);
 
         if (initializedRef.current) {

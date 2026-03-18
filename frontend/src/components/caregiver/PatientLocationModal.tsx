@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { MapPin, Clock, Navigation, Map as MapIcon } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
+import { formatDateTime } from '@/lib/datetime';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -106,7 +107,7 @@ const LocationMap = ({ currentLocation, recentLocations, patientName }: { curren
       const lng = getLng(currentLocation);
       if (lat && lng) {
         L.marker([lat, lng], { icon: createCustomIcon('#3B82F6') })
-          .bindPopup(`<strong>Current Location</strong><br>${patientName}<br>Updated: ${new Date(currentLocation.updated_at).toLocaleString()}`)
+          .bindPopup(`<strong>Current Location</strong><br>${patientName}<br>Updated: ${formatDateTime(currentLocation.updated_at)}`)
           .addTo(map);
       }
     }
@@ -118,7 +119,7 @@ const LocationMap = ({ currentLocation, recentLocations, patientName }: { curren
         const lng = getLng(location);
         if (lat && lng) {
           L.marker([lat, lng], { icon: createCustomIcon('#EF4444') })
-            .bindPopup(`<strong>Recent Location #${index + 1}</strong><br>Captured: ${new Date(location.captured_at).toLocaleString()}`)
+            .bindPopup(`<strong>Recent Location #${index + 1}</strong><br>Captured: ${formatDateTime(location.captured_at)}`)
             .addTo(map);
         }
       });
@@ -177,7 +178,7 @@ export const PatientLocationModal = ({
 
   const formatTime = (timestamp: string) => {
     try {
-      return new Date(timestamp).toLocaleString();
+      return formatDateTime(timestamp);
     } catch {
       return timestamp;
     }

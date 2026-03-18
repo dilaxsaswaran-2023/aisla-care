@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Label } from '@/components/ui/label';
 import { Camera, Activity, DoorOpen, Watch, Power, Plus } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { formatDateTime } from '@/lib/datetime';
 
 interface Device {
   id: string;
@@ -222,7 +223,7 @@ const DeviceManager = ({ patientId }: DeviceManagerProps) => {
             <CardContent>
               <div className="text-xs text-muted-foreground">
                 {device.last_reading_at 
-                  ? `Last active: ${new Date(device.last_reading_at).toLocaleString()}`
+                  ? `Last active: ${formatDateTime(device.last_reading_at)}`
                   : 'No activity yet'}
               </div>
             </CardContent>

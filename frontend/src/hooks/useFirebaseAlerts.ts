@@ -8,6 +8,7 @@ import {
   Timestamp,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { parseDateTime } from "@/lib/datetime";
 
 export interface FirebasePatientAlert {
   id: string;
@@ -66,7 +67,7 @@ export function useFirebaseAlerts(patientIds: string[]) {
           }));
           
           // Sort by created_at in memory (since orderBy is temporarily removed)
-          docs.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+          docs.sort((a, b) => (parseDateTime(b.created_at)?.getTime() || 0) - (parseDateTime(a.created_at)?.getTime() || 0));
 
           setAlerts(docs);
 

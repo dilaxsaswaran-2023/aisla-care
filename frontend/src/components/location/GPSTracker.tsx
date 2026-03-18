@@ -5,6 +5,7 @@ import { MapPin, Navigation, AlertCircle } from 'lucide-react';
 import { useState } from 'react';
 import { useGPSTracking } from '@/hooks/useGPSTracking';
 import { useAuth } from '@/contexts/AuthContext';
+import { formatTime } from '@/lib/datetime';
 
 interface GPSTrackerProps {
   autoStart?: boolean;
@@ -57,7 +58,7 @@ const GPSTracker = ({ autoStart = false }: GPSTrackerProps) => {
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Last Update:</span>
-                <span>{location.timestamp.toLocaleTimeString()}</span>
+                <span>{formatTime(location.timestamp)}</span>
               </div>
             </div>
 

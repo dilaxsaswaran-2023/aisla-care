@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Camera, Users, Wifi, AlertCircle } from 'lucide-react';
+import { formatTime } from '@/lib/datetime';
 
 interface CameraFeedProps {
   patientId?: string;
@@ -128,7 +129,7 @@ const CameraFeed = ({ patientId }: CameraFeedProps) => {
           <span>✓ Motion detection active</span>
           <span>✓ People counting enabled</span>
         </div>
-        {lastDetection && <span>Last detection: {lastDetection.toLocaleTimeString()}</span>}
+        {lastDetection && <span>Last detection: {formatTime(lastDetection)}</span>}
       </div>
       <div className="text-xs text-muted-foreground bg-muted/30 p-2 rounded">
         <p><strong>Demo Streams:</strong> Living Room uses a YouTube Live embed. Front Door and Garden use public MP4 samples. Kitchen is offline.</p>

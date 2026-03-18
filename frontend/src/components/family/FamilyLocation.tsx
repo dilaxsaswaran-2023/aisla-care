@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { MapPin, Clock, Navigation, RefreshCw, Route, UserRound } from "lucide-react";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+import { formatDateTime } from "@/lib/datetime";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -123,7 +124,7 @@ const FamilyLocation = ({ patients, selectedPatientId, onSelectPatient, patient 
       });
       L.marker([lat, lng], { icon: redIcon })
         .addTo(map)
-        .bindPopup(`<b>Recent Location</b><br/>${loc.captured_at ? new Date(loc.captured_at).toLocaleString() : ""}`);
+        .bindPopup(`<b>Recent Location</b><br/>${loc.captured_at ? formatDateTime(loc.captured_at) : ""}`);
     });
 
     return () => {
@@ -205,7 +206,7 @@ const FamilyLocation = ({ patients, selectedPatientId, onSelectPatient, patient 
                   <Clock className="w-4 h-4" />
                   <span>
                     {currentLocation?.updated_at || currentLocation?.captured_at
-                      ? new Date((currentLocation.updated_at ?? currentLocation.captured_at) as string).toLocaleString()
+                      ? formatDateTime((currentLocation.updated_at ?? currentLocation.captured_at) as string)
                       : "-"}
                   </span>
                 </div>
@@ -235,7 +236,7 @@ const FamilyLocation = ({ patients, selectedPatientId, onSelectPatient, patient 
                     <p className="font-medium">{lat.toFixed(5)}, {lng.toFixed(5)}</p>
                     <p className="text-xs text-muted-foreground">Accuracy: {typeof loc.accuracy === "number" ? `${loc.accuracy.toFixed(1)} m` : "-"}</p>
                   </div>
-                  <p className="text-xs text-muted-foreground">{at ? new Date(at).toLocaleString() : "-"}</p>
+                  <p className="text-xs text-muted-foreground">{at ? formatDateTime(at) : "-"}</p>
                 </div>
               );
             })}

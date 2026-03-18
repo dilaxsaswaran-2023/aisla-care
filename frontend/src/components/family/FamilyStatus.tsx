@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Activity, HeartPulse, Clock, Phone, MessageSquare, Shield, AlertTriangle, UserRound, Bell, RefreshCw } from "lucide-react";
 import { useState, useEffect } from "react";
 import { api } from "@/lib/api";
+import { formatDateTime, formatTime, getTodayLocalDateString } from "@/lib/datetime";
 
 interface AlertItem {
   id: string;
@@ -83,7 +84,7 @@ const FamilyStatus = ({
     if (!patientId) return;
     setLoadingMedication(true);
     try {
-      const today = new Date().toISOString().slice(0, 10);
+      const today = getTodayLocalDateString();
       const response = await api.get(`/medication-schedules/monitor?patient_id=${patientId}&date=${today}`) as {
         date?: string;
         items?: MedicationMonitorItem[];
@@ -164,7 +165,7 @@ const FamilyStatus = ({
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Last profile update</p>
-                <p>{patient.updated_at ? new Date(patient.updated_at).toLocaleString() : "-"}</p>
+                <p>{patient.updated_at ? formatDateTime(patient.updated_at) : "-"}</p>
               </div>
               <div className="sm:col-span-2">
                 <p className="text-xs text-muted-foreground">Address</p>
@@ -217,7 +218,7 @@ const FamilyStatus = ({
                       ) : null}
                       <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1.5">
                         <Clock className="w-3.5 h-3.5" />
-                        {new Date(alert.created_at).toLocaleString()}
+                        {formatDateTime(alert.created_at)}
                       </p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
@@ -280,16 +281,16 @@ const FamilyStatus = ({
                       </div>
                       <div className="flex flex-col">
                         <span className="font-medium text-muted-foreground">Scheduled For</span>
-                        <span>{new Date(item.scheduled_for_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        <span>{formatTime(item.scheduled_for_at)}</span>
                       </div>
                       <div className="flex flex-col">
                         <span className="font-medium text-muted-foreground">Due At</span>
-                        <span>{new Date(item.due_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        <span>{formatTime(item.due_at)}</span>
                       </div>
                       {item.taken_at && (
                         <div className="col-span-2 flex flex-col">
                           <span className="font-medium text-green-600">Taken At</span>
-                          <span className="text-green-600 font-semibold">{new Date(item.taken_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                          <span className="text-green-600 font-semibold">{formatTime(item.taken_at)}</span>
                         </div>
                       )}
                       {item.urgency_level && (

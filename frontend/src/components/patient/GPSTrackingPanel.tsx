@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { MapPin, Wifi, Activity, Clock, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { useGPSTracking } from '@/hooks/useGPSTracking';
 import { useAuth } from '@/contexts/AuthContext';
+import { formatTime } from '@/lib/datetime';
 
 export const GPSTrackingPanel = () => {
   const { user } = useAuth();
@@ -114,7 +115,7 @@ export const GPSTrackingPanel = () => {
             <div>
               <p className="text-xs text-muted-foreground mb-1">Last Update</p>
               <p className="text-sm font-semibold">
-                {location.timestamp.toLocaleTimeString()}
+                {formatTime(location.timestamp)}
               </p>
             </div>
           </div>

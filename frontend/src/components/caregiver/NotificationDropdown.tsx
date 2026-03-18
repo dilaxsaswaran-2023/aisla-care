@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { AlertCircle, Bell, CheckCircle } from "lucide-react";
 import { api } from "@/lib/api";
 import { AlertDetailModal } from "./AlertDetailModal";
+import { formatRelativeTime } from "@/lib/datetime";
 
 interface AlertItem {
   id: string;
@@ -106,17 +107,6 @@ export const NotificationDropdown = ({
     } finally {
       setLoadingDetail(false);
     }
-  };
-
-  const formatRelativeTime = (iso: string) => {
-    const istOffset = 5.5 * 60 * 60 * 1000; // +5:30 hours in milliseconds
-    const diff = Date.now() - (new Date(iso).getTime() + istOffset);
-    const mins = Math.floor(diff / 60000);
-    if (mins < 1) return "Just now";
-    if (mins < 60) return `${mins}m ago`;
-    const hrs = Math.floor(mins / 60);
-    if (hrs < 24) return `${hrs}h ago`;
-    return `${Math.floor(hrs / 24)}d ago`;
   };
 
   const getAlertStyle = (source?: string) => {

@@ -21,6 +21,7 @@ import {
   FileText,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { formatDateTime } from "@/lib/datetime";
 
 interface AuditLog {
   id: string;
@@ -392,7 +393,7 @@ const AuditLogRow = ({
 
           <div className="flex items-center gap-1.5 rounded-full border border-border/60 bg-background/70 px-3 py-1.5 text-[11px] text-muted-foreground">
             <Clock className="h-3.5 w-3.5" />
-            <span>{new Date(log.created_at).toLocaleString()}</span>
+            <span>{formatDateTime(log.created_at)}</span>
           </div>
         </div>
       </div>

@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Shield, Check, X, Clock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { formatDate } from "@/lib/datetime";
 
 interface ConsentRecord {
   id: string;
@@ -86,10 +87,10 @@ const ConsentManagement = () => {
                   <div className="flex items-center gap-1.5">
                     <Clock className="w-3 h-3" />
                     {consent.granted && consent.granted_at
-                      ? `Granted: ${new Date(consent.granted_at).toLocaleDateString()}`
+                      ? `Granted: ${formatDate(consent.granted_at)}`
                       : consent.revoked_at
-                      ? `Revoked: ${new Date(consent.revoked_at).toLocaleDateString()}`
-                      : `Created: ${new Date(consent.created_at).toLocaleDateString()}`
+                      ? `Revoked: ${formatDate(consent.revoked_at)}`
+                      : `Created: ${formatDate(consent.created_at)}`
                     }
                   </div>
                   <p>User: {consent.user_id.substring(0, 8)}...</p>

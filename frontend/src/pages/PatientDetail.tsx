@@ -22,6 +22,7 @@ import {
   Activity
 } from "lucide-react";
 import MedicationScheduleDialog from "@/components/patient/MedicationScheduleDialog";
+import { formatDate, getTodayLocalDateString } from "@/lib/datetime";
 
 interface Patient {
   id: string;
@@ -144,11 +145,15 @@ const PatientDetail = () => {
     }
   };
 
+  const formatTimeT = (value: string): string => {
+    return value.split("T")[1].slice(0, 5);
+  };
+
   const loadMedicationStatus = async (pId: string) => {
     if (!pId) return;
     setLoadingMedication(true);
     try {
-      const today = new Date().toISOString().slice(0, 10);
+      const today = getTodayLocalDateString();
       const response = await api.get(`/medication-schedules/monitor?patient_id=${pId}&date=${today}`) as {
         date?: string;
         items?: MedicationMonitorItem[];
@@ -459,9 +464,7 @@ const PatientDetail = () => {
                           <Badge variant="outline" className="text-[10px] rounded-lg">{alert.alert_type}</Badge>
                           <Badge variant="outline" className="text-[10px] rounded-lg">{alert.status}</Badge>
                         </div>
-                        <p className="text-[10px] text-muted-foreground mt-2">
-                          {new Date(alert.created_at).toLocaleDateString()}
-                        </p>
+                        <p className="text-[10px] text-muted-foreground mt-2">{formatDate(alert.created_at)}</p>
                       </div>
                     ))}
                   </div>
@@ -559,14 +562,14 @@ const PatientDetail = () => {
                               <div className="inline-flex items-center gap-1">
                                 <span className="text-muted-foreground">Scheduled</span>
                                 <span className="font-medium">
-                                  {new Date(item.scheduled_for_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  {formatTimeT(item.scheduled_for_at)}
                                 </span>
                               </div>
 
                               <div className="inline-flex items-center gap-1">
                                 <span className="text-muted-foreground">Due</span>
                                 <span className="font-medium">
-                                  {new Date(item.due_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  {formatTimeT(item.due_at)}
                                 </span>
                               </div>
 
@@ -574,7 +577,7 @@ const PatientDetail = () => {
                                 <div className="inline-flex items-center gap-1">
                                   <span className="text-muted-foreground">Taken</span>
                                   <span className="font-medium text-green-600">
-                                    {new Date(item.taken_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                    {formatTimeT(item.taken_at)}
                                   </span>
                                 </div>
                               ) : null}

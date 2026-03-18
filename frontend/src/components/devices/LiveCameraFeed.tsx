@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Camera, Users, Settings, Play, Pause } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { formatTime } from '@/lib/datetime';
 
 interface LiveCameraFeedProps {
   patientId?: string;
@@ -183,7 +184,7 @@ const LiveCameraFeed = ({ patientId, streamUrl: initialStreamUrl }: LiveCameraFe
             <p>✓ Motion detection active</p>
             <p>✓ People counting enabled</p>
             {lastDetection && (
-              <p>Last detection: {lastDetection.toLocaleTimeString()}</p>
+              <p>Last detection: {formatTime(lastDetection)}</p>
             )}
           </div>
           <Button

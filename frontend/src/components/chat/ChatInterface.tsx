@@ -8,6 +8,7 @@ import { Send, Mic, MicOff, Phone, Check, CheckCheck, Circle, Trash2, Square } f
 import { useToast } from '@/hooks/use-toast';
 import { useSocket, ChatMessage } from '@/hooks/useSocket';
 import { createFirebaseChatNotification } from '@/hooks/useFirebaseChatNotifications';
+import { formatTime } from '@/lib/datetime';
 
 const API_BASE = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5030';
 
@@ -350,10 +351,7 @@ const ChatInterface = ({ recipientId, recipientName, maxMessageWidth = 'max-w-fu
                   {isSender && (
                     <div className="flex items-center gap-2 text-xs px-1">
                       <span className="opacity-60">
-                        {new Date(message.created_at).toLocaleTimeString([], {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
+                        {formatTime(message.created_at)}
                       </span>
                       <MessageStatus status={message.status} isSender={isSender} />
                     </div>

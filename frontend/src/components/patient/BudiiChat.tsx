@@ -4,18 +4,21 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Send, X, Bot } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { formatTime } from "@/lib/datetime";
 
 interface BudiiChatProps {
   onClose: () => void;
 }
 
 const BudiiChat = ({ onClose }: BudiiChatProps) => {
+  const nowTime = () => formatTime(new Date());
+
   const [messages, setMessages] = useState([
     {
       id: 1,
       type: "budii",
       text: "Hello! I'm Budii, your friendly care assistant. How are you feeling today?",
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      time: nowTime(),
     }
   ]);
   const [input, setInput] = useState("");
@@ -29,7 +32,7 @@ const BudiiChat = ({ onClose }: BudiiChatProps) => {
       id: messages.length + 1,
       type: "user",
       text: input,
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      time: nowTime(),
     };
 
     setMessages(prev => [...prev, userMessage]);
@@ -65,7 +68,7 @@ const BudiiChat = ({ onClose }: BudiiChatProps) => {
         id: messages.length + 2,
         type: "budii",
         text: data.message,
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        time: nowTime(),
       };
       setMessages(prev => [...prev, budiiResponse]);
     } catch (error) {
@@ -80,7 +83,7 @@ const BudiiChat = ({ onClose }: BudiiChatProps) => {
         id: messages.length + 2,
         type: "budii",
         text: "I'm having trouble connecting right now. Please try again in a moment.",
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        time: nowTime(),
       };
       setMessages(prev => [...prev, budiiResponse]);
     }
