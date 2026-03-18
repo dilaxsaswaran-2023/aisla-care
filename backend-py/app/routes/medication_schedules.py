@@ -109,80 +109,93 @@ def list_medication_monitor_status(
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    import logging
+    logger = logging.getLogger(__name__)
+    
     try:
-        patient_uuid = uuid.UUID(patient_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid patient_id")
-
-    if not _has_patient_access(db, current_user, patient_uuid):
-        raise HTTPException(status_code=403, detail="Access denied")
-
-    if date:
+        logger.info(f"[Medication Monitor] Fetching for patient_id={patient_id}, date={date}")
+        
         try:
-            target_date = datetime.fromisoformat(date).date()
+            patient_uuid = uuid.UUID(patient_id)
         except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid date. Use YYYY-MM-DD")
-    else:
-        target_date = datetime.now(timezone.utc).date()
+            raise HTTPException(status_code=400, detail="Invalid patient_id")
 
-    day_start = datetime.combine(target_date, datetime.min.time())
-    day_end = day_start + timedelta(days=1)
+        if not _has_patient_access(db, current_user, patient_uuid):
+            raise HTTPException(status_code=403, detail="Access denied")
 
-    schedules = db.query(MedicationSchedule).filter(
-        MedicationSchedule.patient_id == patient_uuid,
-        MedicationSchedule.is_active == True,
-    ).order_by(MedicationSchedule.created_at.desc()).all()
-
-    monitor_rows = db.query(MedicationScheduleMonitor).filter(
-        MedicationScheduleMonitor.patient_id == patient_uuid,
-        MedicationScheduleMonitor.scheduled_for_at >= day_start,
-        MedicationScheduleMonitor.scheduled_for_at < day_end,
-    ).all()
-
-    monitor_by_key = {
-        (str(row.medication_schedule_id), row.scheduled_for_at.strftime("%H:%M")): row
-        for row in monitor_rows
-    }
-
-    now = datetime.now(timezone.utc)
-    items = []
-    for schedule in schedules:
-        if not _is_schedule_due_on_date(schedule, day_start):
-            continue
-
-        for time_value in schedule.scheduled_times or []:
+        if date:
             try:
-                hour, minute = map(int, str(time_value).split(":"))
-            except Exception:
+                target_date = datetime.fromisoformat(date).date()
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid date. Use YYYY-MM-DD")
+        else:
+            target_date = datetime.now(timezone.utc).date()
+
+        day_start = datetime.combine(target_date, datetime.min.time(), tzinfo=timezone.utc)
+        day_end = day_start + timedelta(days=1)
+
+        schedules = db.query(MedicationSchedule).filter(
+            MedicationSchedule.patient_id == patient_uuid,
+            MedicationSchedule.is_active == True,
+        ).order_by(MedicationSchedule.created_at.desc()).all()
+
+        monitor_rows = db.query(MedicationScheduleMonitor).filter(
+            MedicationScheduleMonitor.patient_id == patient_uuid,
+            MedicationScheduleMonitor.scheduled_for_at >= day_start,
+            MedicationScheduleMonitor.scheduled_for_at < day_end,
+        ).all()
+
+        monitor_by_key = {
+            (str(row.medication_schedule_id), row.scheduled_for_at.strftime("%H:%M")): row
+            for row in monitor_rows
+        }
+
+        now = datetime.now(timezone.utc)
+        items = []
+        for schedule in schedules:
+            if not _is_schedule_due_on_date(schedule, day_start):
                 continue
 
-            scheduled_for_at = day_start.replace(hour=hour, minute=minute, second=0, microsecond=0)
-            due_at = scheduled_for_at + timedelta(minutes=int(schedule.grace_period_minutes or 60))
+            for time_value in schedule.scheduled_times or []:
+                try:
+                    hour, minute = map(int, str(time_value).split(":"))
+                except Exception:
+                    logger.warning(f"[Medication Monitor] Invalid time format: {time_value}")
+                    continue
 
-            monitor = monitor_by_key.get((str(schedule.id), str(time_value)))
-            if monitor:
-                status = monitor.status
-                taken_at = monitor.taken_at
-            else:
-                status = "missed" if now > due_at else "pending"
-                taken_at = None
+                scheduled_for_at = day_start.replace(hour=hour, minute=minute, second=0, microsecond=0)
+                due_at = scheduled_for_at + timedelta(minutes=int(schedule.grace_period_minutes or 60))
 
-            items.append({
-                "schedule_id": str(schedule.id),
-                "medication_name": schedule.name,
-                "description": schedule.description,
-                "urgency_level": schedule.urgency_level,
-                "time": str(time_value),
-                "scheduled_for_at": scheduled_for_at.isoformat(),
-                "due_at": due_at.isoformat(),
-                "status": status,
-                "taken_at": taken_at.isoformat() if taken_at else None,
-                "monitor_id": str(monitor.id) if monitor else None,
-                "can_mark_done": status != "taken",
-            })
+                monitor = monitor_by_key.get((str(schedule.id), str(time_value)))
+                if monitor:
+                    status = monitor.status
+                    taken_at = monitor.taken_at
+                else:
+                    status = "missed" if now > due_at else "pending"
+                    taken_at = None
 
-    items.sort(key=lambda item: item["scheduled_for_at"])
-    return {"date": target_date.isoformat(), "items": items}
+                items.append({
+                    "schedule_id": str(schedule.id),
+                    "medication_name": schedule.name,
+                    "description": schedule.description,
+                    "urgency_level": schedule.urgency_level,
+                    "time": str(time_value),
+                    "scheduled_for_at": scheduled_for_at.isoformat(),
+                    "due_at": due_at.isoformat(),
+                    "status": status,
+                    "taken_at": taken_at.isoformat() if taken_at else None,
+                    "monitor_id": str(monitor.id) if monitor else None,
+                    "can_mark_done": status != "taken",
+                })
+
+        items.sort(key=lambda item: item["scheduled_for_at"])
+        logger.info(f"[Medication Monitor] Successfully fetched {len(items)} items for patient {patient_id}")
+        return {"date": target_date.isoformat(), "items": items}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"[Medication Monitor] Error fetching medication monitor data: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch medication monitor data")
 
 # GET /api/medication-schedules - List all medication schedules for current user's patients
 @router.get("/")

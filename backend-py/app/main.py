@@ -276,13 +276,21 @@ app = FastAPI(
 )
 app.state.sio = sio
 
-# CORS
+# CORS - Add this BEFORE registering routes
+cors_origins = [settings.cors_origin]
+if settings.cors_origin not in cors_origins:
+    cors_origins.append(settings.cors_origin)
+
+# Additional allowed origins for development
+allowed_origins = list(set(cors_origins + ["http://localhost:8030", "http://127.0.0.1:8030", "http://localhost:3000"]))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.cors_origin],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 # Serve uploaded audio files statically

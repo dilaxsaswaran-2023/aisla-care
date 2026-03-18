@@ -26,12 +26,12 @@ import MedicationScheduleDialog from "@/components/patient/MedicationScheduleDia
 interface Patient {
   id: string;
   full_name: string;
-  email: string;
-  phone: string;
-  address: string;
-  role: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  role?: string;
   is_geofencing?: boolean;
-  location_boundary?: { latitude: number; longitude: number };
+  location_boundary?: { latitude: number; longitude: number } | null;
   boundary_radius?: number;
 }
 
@@ -389,25 +389,31 @@ const PatientDetail = () => {
           </div>
 
           <div className="mt-3 flex flex-wrap gap-2">
-            <div className="inline-flex items-center gap-2 rounded-xl border bg-background px-3 py-1.5 text-xs">
-              <Mail className="w-3.5 h-3.5 text-muted-foreground" />
-              <span className="truncate max-w-[220px]">{patient.email || "N/A"}</span>
-            </div>
-            <div className="inline-flex items-center gap-2 rounded-xl border bg-background px-3 py-1.5 text-xs">
-              <Phone className="w-3.5 h-3.5 text-muted-foreground" />
-              <span>{patient.phone || "N/A"}</span>
-            </div>
-            <div className="inline-flex items-center gap-2 rounded-xl border bg-background px-3 py-1.5 text-xs">
-              <MapPin className="w-3.5 h-3.5 text-muted-foreground" />
-              <span className="truncate max-w-[260px]">{patient.address || "N/A"}</span>
-            </div>
+            {patient.email && (
+              <div className="inline-flex items-center gap-2 rounded-xl border bg-background px-3 py-1.5 text-xs">
+                <Mail className="w-3.5 h-3.5 text-muted-foreground" />
+                <span className="truncate max-w-[220px]">{patient.email}</span>
+              </div>
+            )}
+            {patient.phone && (
+              <div className="inline-flex items-center gap-2 rounded-xl border bg-background px-3 py-1.5 text-xs">
+                <Phone className="w-3.5 h-3.5 text-muted-foreground" />
+                <span>{patient.phone}</span>
+              </div>
+            )}
+            {patient.address && (
+              <div className="inline-flex items-center gap-2 rounded-xl border bg-background px-3 py-1.5 text-xs">
+                <MapPin className="w-3.5 h-3.5 text-muted-foreground" />
+                <span className="truncate max-w-[260px]">{patient.address}</span>
+              </div>
+            )}
             {patient.boundary_radius ? (
               <div className="inline-flex items-center gap-2 rounded-xl border bg-background px-3 py-1.5 text-xs">
                 <Activity className="w-3.5 h-3.5 text-muted-foreground" />
                 <span>{patient.boundary_radius}m radius</span>
               </div>
             ) : null}
-            {patient.is_geofencing && patient.location_boundary ? (
+            {patient.is_geofencing && patient.location_boundary && patient.location_boundary.latitude !== undefined && patient.location_boundary.longitude !== undefined ? (
               <div className="inline-flex items-center gap-2 rounded-xl border bg-background px-3 py-1.5 text-xs">
                 <MapPin className="w-3.5 h-3.5 text-muted-foreground" />
                 <span>
