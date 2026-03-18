@@ -1,18 +1,24 @@
 import argparse
-import subprocess
 import sys
 from pathlib import Path
 
+from sqlalchemy.exc import SQLAlchemyError
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-ALEMBIC_INI = PROJECT_ROOT / "alembic.ini"
-SEEDER_PATH = PROJECT_ROOT / "app" / "seeder.py"
+
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+# Import models package so all model metadata is registered on Base.
+from app import models  # noqa: F401
+from app.database import Base, SessionLocal, engine
+from app.seeder import seed_super_admin
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Drop all tables by downgrading to Alembic base, recreate schema at head, "
+            "Drop all tables using SQLAlchemy metadata, recreate schema, "
             "then run app/seeder.py."
         )
     )
@@ -24,37 +30,45 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def run_step(label: str, cmd: list[str]) -> None:
-    print(f"\n[{label}] {' '.join(cmd)}")
-    subprocess.run(cmd, cwd=PROJECT_ROOT, check=True)
+def drop_and_recreate_tables() -> None:
+    print("\n[RESET] Dropping all tables...")
+    Base.metadata.drop_all(bind=engine)
+    print("[RESET] Creating all tables...")
+    Base.metadata.create_all(bind=engine)
+
+
+def run_seed() -> None:
+    print("\n[SEED] Running super-admin seed...")
+    db = SessionLocal()
+    try:
+        seed_super_admin(db)
+    finally:
+        db.close()
 
 
 def main() -> None:
     args = parse_args()
 
-    python_exec = sys.executable
-    downgrade_cmd = [python_exec, "-m", "alembic", "-c", str(ALEMBIC_INI), "downgrade", "base"]
-    upgrade_cmd = [python_exec, "-m", "alembic", "-c", str(ALEMBIC_INI), "upgrade", "head"]
-    seed_cmd = [python_exec, str(SEEDER_PATH)]
-
     print("Reset plan:")
-    print("  1. Drop all schema objects via Alembic downgrade base")
-    print("  2. Recreate schema via Alembic upgrade head")
-    print("  3. Run seeder script")
+    print("  1. Drop all tables via SQLAlchemy Base.metadata.drop_all")
+    print("  2. Recreate all tables via SQLAlchemy Base.metadata.create_all")
+    print("  3. Run seeder function")
 
     if not args.execute:
         print("\nPreview only. Re-run with --execute to apply changes.")
         print("\nCommand:")
-        print(f"  {python_exec} scripts/reset_db_and_seed.py --execute")
+        print(f"  {sys.executable} scripts/reset_db_and_seed.py --execute")
         return
 
     try:
-        run_step("DOWNGRADE", downgrade_cmd)
-        run_step("UPGRADE", upgrade_cmd)
-        run_step("SEED", seed_cmd)
+        drop_and_recreate_tables()
+        run_seed()
         print("\nDatabase reset and seeding completed successfully.")
-    except subprocess.CalledProcessError as exc:
-        print(f"\nFailed at step with exit code {exc.returncode}.")
+    except SQLAlchemyError as exc:
+        print(f"\nDatabase operation failed: {exc}")
+        raise
+    except Exception as exc:
+        print(f"\nReset/seed failed: {exc}")
         raise
 
 
