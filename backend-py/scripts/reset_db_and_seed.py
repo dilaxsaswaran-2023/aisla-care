@@ -2,6 +2,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -31,8 +32,11 @@ def parse_args() -> argparse.Namespace:
 
 
 def drop_and_recreate_tables() -> None:
-    print("\n[RESET] Dropping all tables...")
-    Base.metadata.drop_all(bind=engine)
+    print("\n[RESET] Dropping public schema with CASCADE...")
+    with engine.begin() as conn:
+        conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
+        conn.execute(text("CREATE SCHEMA public"))
+
     print("[RESET] Creating all tables...")
     Base.metadata.create_all(bind=engine)
 
@@ -50,7 +54,7 @@ def main() -> None:
     args = parse_args()
 
     print("Reset plan:")
-    print("  1. Drop all tables via SQLAlchemy Base.metadata.drop_all")
+    print("  1. Drop and recreate public schema via SQL (CASCADE)")
     print("  2. Recreate all tables via SQLAlchemy Base.metadata.create_all")
     print("  3. Run seeder function")
 
