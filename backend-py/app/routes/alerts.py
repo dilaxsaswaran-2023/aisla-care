@@ -339,9 +339,12 @@ async def sos_alert(
             event_id=str(alert.id), 
             alert_type="sos",   
             message=sos_rules[0].get("voice_transcription", ""), 
-            priority = get_sos_priority(sos_rules[0].get("voice_transcription", "")) or "high"
-        )
-        
+            priority=(
+                get_sos_priority(body.voice_transcription or "")
+                if sos_case == "SOS_TRIGGER"
+                else "high"
+            ) or "high",
+        )            
         db.add(sos_alert)
         db.commit()
         db.refresh(sos_alert)
