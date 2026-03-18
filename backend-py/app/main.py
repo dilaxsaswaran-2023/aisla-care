@@ -12,6 +12,7 @@ from app.database import engine, Base, SessionLocal
 from app.jwt_utils import init_jwt_secret
 from app.jwt_utils import verify_access_token
 from app.seeder import seed_super_admin
+from app.services.audit_log_service import register_audit_event_listeners
 from app.services.geofence_scheduler import start_scheduler, stop_scheduler
 from app.services.medication_scheduler import start_medication_scheduler, stop_medication_scheduler
 
@@ -51,6 +52,8 @@ async def lifespan(app: FastAPI):
     """Application lifespan context manager."""
     # ── Startup ──────────────────────────────────────────────────────────────
     try:
+        register_audit_event_listeners()
+
         # Create all tables
         Base.metadata.create_all(bind=engine)
         logger.info("[DB] Database tables created")

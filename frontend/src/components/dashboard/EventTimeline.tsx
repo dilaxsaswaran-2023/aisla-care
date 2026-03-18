@@ -25,7 +25,7 @@ const EventTimeline = ({ patientId }: EventTimelineProps) => {
 
   const loadEvents = async () => {
     try {
-      const url = patientId ? `/audit-logs?userId=${patientId}` : '/audit-logs';
+      const url = patientId ? `/audit-logs?patientId=${patientId}` : '/audit-logs';
       const data = await api.get(url);
       setEvents(data || []);
     } catch (err) {

@@ -9,7 +9,6 @@ from sqlalchemy import desc
 from app.database import get_db
 from app.models.alert import Alert
 from app.models.alert_relationship import AlertRelationship
-from app.models.audit_log import AuditLog
 from app.models.gps_location import GpsLocation
 from app.models.user import User
 from app.auth import get_current_user
@@ -191,17 +190,6 @@ def create_alert(
     db.commit()
     db.refresh(alert)
 
-    # Audit log
-    audit = AuditLog(
-        user_id=uuid.UUID(current_user["userId"]),
-        action=f"{alert.alert_type}_alert_created",
-        entity_type="alert",
-        entity_id=str(alert.id),
-        metadata_={"priority": alert.priority},
-    )
-    db.add(audit)
-    db.commit()
-
     # Create alert relationships for all caregivers and family members
     relationships = create_alert_relationships(db, alert.id, patient_id)
 
@@ -314,16 +302,6 @@ async def sos_alert(
     db.add(alert)
     db.commit()
     db.refresh(alert)
-
-    audit = AuditLog(
-        user_id=user_id,
-        action="sos_alert_created",
-        entity_type="alert",
-        entity_id=str(alert.id),
-        metadata_={"priority": "critical", "has_voice": bool(body.voice_transcription)},
-    )
-    db.add(audit)
-    db.commit()
 
     # Create alert relationships for all caregivers and family members
     relationships = create_alert_relationships(db, alert.id, user_id)

@@ -6,7 +6,6 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.budii_alert import PatientAlert
 from app.models.budii_alert_relationship import BudiiAlertRelationship
-from app.models.audit_log import AuditLog
 from app.models.user import User
 from app.auth import get_current_user
 from app.services.budii_alert_relationship_service import create_budii_alert_relationships
@@ -121,17 +120,6 @@ def create_budii_alert(
     db.add(alert)
     db.commit()
     db.refresh(alert)
-
-    # Audit log
-    audit = AuditLog(
-        user_id=uuid.UUID(current_user["userId"]),
-        action="budii_alert_created",
-        entity_type="budii_alert",
-        entity_id=str(alert.id),
-        metadata_={"case": body.case, "alert_type": body.alert_type},
-    )
-    db.add(audit)
-    db.commit()
 
     # Create alert relationships for all caregivers and family members
     relationships = create_budii_alert_relationships(db, alert.id, patient_id)
