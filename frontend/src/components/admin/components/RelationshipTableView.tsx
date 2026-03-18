@@ -147,8 +147,8 @@ export const RelationshipTableView = ({ relationships, isMobile, onRefresh }: Pr
   return (
     <>
       {/* Tab Bar */}
-      <div className="flex items-center justify-between gap-2 mb-3">
-        <div className="flex gap-2 border-b w-full">
+      <div className="mb-3 flex items-center justify-between gap-2 rounded-2xl border border-border/60 bg-background/80 p-2 shadow-sm">
+        <div className="flex w-full gap-2 border-b border-border/60">
           {(['caregiver', 'patient', 'family'] as Tab[]).map((tab) => {
             const count =
               tab === 'caregiver' ? caregiverListBase.length : tab === 'patient' ? patientListBase.length : familyListBase.length;
@@ -157,7 +157,7 @@ export const RelationshipTableView = ({ relationships, isMobile, onRefresh }: Pr
               <button
                 key={tab}
                 onClick={() => switchTab(tab)}
-                className={`px-4 py-2 text-sm font-medium transition-colors ${activeTab === tab ? 'border-b-2 border-primary text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                className={`rounded-t-xl px-4 py-2 text-sm font-medium transition-colors ${activeTab === tab ? 'border-b-2 border-primary bg-primary/5 text-primary' : 'text-muted-foreground hover:bg-muted/30 hover:text-foreground'}`}
               >
                 {label}
                 <span
@@ -174,25 +174,25 @@ export const RelationshipTableView = ({ relationships, isMobile, onRefresh }: Pr
       {/* Two-column explorer + details */}
       <div className={`grid gap-4 ${isMobile ? 'grid-cols-1' : 'lg:grid-cols-12'}`}>
         {/* ── Explorer Panel ─────────────────────────────────────────────────── */}
-        <div className={`${isMobile ? '' : 'lg:col-span-4'} rounded-lg border border-border overflow-hidden`}>
-          <div className="px-3 py-2 bg-muted/30 border-b border-border flex items-center justify-between">
+        <div className={`${isMobile ? '' : 'lg:col-span-4'} overflow-hidden rounded-2xl border border-border/60 bg-background/85 shadow-sm`}>
+          <div className="flex items-center justify-between border-b border-border/60 bg-gradient-to-r from-background via-primary/5 to-background px-3 py-2">
             <div className="text-sm font-semibold">Relationship Explorer</div>
             <Badge variant="secondary" className="text-xs">{activeList.length}</Badge>
           </div>
 
-          <div className="px-3 py-2 border-b border-border flex items-center justify-between gap-2">
+          <div className="flex items-center justify-between gap-2 border-b border-border/60 px-3 py-2">
             <Badge variant="outline" className="text-[10px]">{exploringLabel}</Badge>
             <Badge variant="secondary" className="text-[10px]">{exploringChip}</Badge>
           </div>
 
-          <div className="p-3 border-b border-border">
+          <div className="border-b border-border/60 p-3">
             <div className="relative">
               <Search className="w-4 h-4 text-muted-foreground absolute left-2 top-1/2 -translate-y-1/2" />
               <Input
                 value={entityQuery}
                 onChange={(e) => setEntityQuery(e.target.value)}
                 placeholder={`Search ${activeTab}s...`}
-                className="pl-8 h-9"
+                className="h-9 rounded-xl border-border/60 bg-background/90 pl-8"
               />
             </div>
           </div>
@@ -205,7 +205,7 @@ export const RelationshipTableView = ({ relationships, isMobile, onRefresh }: Pr
                 <button
                   key={i.id}
                   onClick={() => setSelected((prev) => ({ ...prev, [activeTab]: i.id }))}
-                  className={`w-full text-left px-3 py-3 border-b border-border/60 border-l-2 transition-colors ${selectedId === i.id ? 'border-l-blue-500 bg-blue-500/10' : 'border-l-transparent hover:bg-muted/20'}`}
+                  className={`w-full border-b border-border/60 border-l-2 px-3 py-3 text-left transition-colors ${selectedId === i.id ? 'border-l-primary bg-primary/10' : 'border-l-transparent hover:bg-muted/20'}`}
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3 min-w-0">
@@ -235,18 +235,18 @@ export const RelationshipTableView = ({ relationships, isMobile, onRefresh }: Pr
         </div>
 
         {/* ── Detail Panel ───────────────────────────────────────────────────── */}
-        <div className={`${isMobile ? '' : 'lg:col-span-8'} rounded-lg border border-border overflow-hidden`}>
-          <div className="px-3 py-2 bg-muted/30 border-b border-border flex items-center justify-between">
+        <div className={`${isMobile ? '' : 'lg:col-span-8'} overflow-hidden rounded-2xl border border-border/60 bg-background/85 shadow-sm`}>
+          <div className="flex items-center justify-between border-b border-border/60 bg-gradient-to-r from-background via-primary/5 to-background px-3 py-2">
             <div className="flex items-center gap-2">
               <div className="text-sm font-semibold">
                 {activeTab === 'caregiver' ? 'Caregiver Details' : activeTab === 'patient' ? 'Patient Details' : 'Family Details'}
               </div>
               <Badge variant="secondary" className="text-xs">{exploringLabel}</Badge>
             </div>
-            <Button size="sm" variant="outline" onClick={onRefresh} className="h-8 px-2.5">Refresh</Button>
+            <Button size="sm" variant="outline" onClick={onRefresh} className="h-8 rounded-xl border-border/60 bg-background/90 px-2.5">Refresh</Button>
           </div>
 
-          <div className="px-3 py-2 border-b border-border flex items-center gap-2">
+          <div className="flex items-center gap-2 border-b border-border/60 px-3 py-2">
             <Badge variant="outline" className="text-[10px] gap-1"><HeartHandshake className="w-3 h-3" /> Active exploration</Badge>
             <Badge variant="secondary" className="text-[10px]">{activeTab.toUpperCase()}</Badge>
             <Badge variant="outline" className="text-[10px]">{selectedId ? 'Selected' : 'Not selected'}</Badge>
@@ -272,7 +272,7 @@ export const RelationshipTableView = ({ relationships, isMobile, onRefresh }: Pr
                     </div>
                   </div>
 
-                  <div className="rounded-lg border border-border overflow-hidden">
+                  <div className="overflow-hidden rounded-2xl border border-border/60 bg-background/90">
                     <Table>
                       <TableHeader>
                         <TableRow className="bg-muted/30">
@@ -327,8 +327,8 @@ export const RelationshipTableView = ({ relationships, isMobile, onRefresh }: Pr
                     </div>
                   </div>
 
-                  <div className="rounded-lg border border-border overflow-hidden">
-                    <div className="px-3 py-2 bg-muted/30 border-b border-border flex items-center justify-between">
+                  <div className="overflow-hidden rounded-2xl border border-border/60 bg-background/90">
+                    <div className="flex items-center justify-between border-b border-border/60 bg-muted/30 px-3 py-2">
                       <div className="text-sm font-medium flex items-center gap-2">
                         <User className="w-4 h-4 text-primary" /> Relationship Map
                       </div>
@@ -337,7 +337,7 @@ export const RelationshipTableView = ({ relationships, isMobile, onRefresh }: Pr
 
                     <div className="p-4">
                       <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-3'}`}>
-                        <div className="rounded-lg border border-border bg-muted/10 p-3">
+                        <div className="rounded-2xl border border-border/60 bg-muted/10 p-3">
                           <div className="text-xs font-semibold mb-2">Caregivers</div>
                           {selectedPatientEntry.caregivers.length > 0 ? (
                             <div className="flex flex-wrap gap-1.5">
@@ -350,7 +350,7 @@ export const RelationshipTableView = ({ relationships, isMobile, onRefresh }: Pr
                           )}
                         </div>
 
-                        <div className="rounded-lg border border-border bg-muted/10 p-3 flex items-center justify-center">
+                        <div className="flex items-center justify-center rounded-2xl border border-border/60 bg-muted/10 p-3">
                           <div className="text-center space-y-2">
                             <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center mx-auto text-sm font-semibold text-primary">
                               {selectedPatientEntry.patient.full_name.charAt(0)}
@@ -363,7 +363,7 @@ export const RelationshipTableView = ({ relationships, isMobile, onRefresh }: Pr
                           </div>
                         </div>
 
-                        <div className="rounded-lg border border-border bg-muted/10 p-3">
+                        <div className="rounded-2xl border border-border/60 bg-muted/10 p-3">
                           <div className="text-xs font-semibold mb-2">Family Members</div>
                           {selectedPatientEntry.family_members && selectedPatientEntry.family_members.length > 0 ? (
                             <div className="flex flex-wrap gap-1.5">
@@ -377,7 +377,7 @@ export const RelationshipTableView = ({ relationships, isMobile, onRefresh }: Pr
                         </div>
                       </div>
 
-                      <div className="mt-3 rounded-lg border border-border bg-muted/20 p-3">
+                      <div className="mt-3 rounded-2xl border border-border/60 bg-muted/20 p-3">
                         <div className="text-xs text-muted-foreground flex items-center justify-between">
                           <span>Currently exploring: <span className="text-foreground font-medium">Patient</span></span>
                           <span>{selectedPatientEntry.caregivers.length} caregiver(s) • {selectedPatientEntry.family_members?.length || 0} family member(s)</span>
@@ -387,8 +387,8 @@ export const RelationshipTableView = ({ relationships, isMobile, onRefresh }: Pr
                   </div>
 
                   <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
-                    <div className="rounded-lg border border-border overflow-hidden">
-                      <div className="px-3 py-2 bg-muted/30 border-b border-border text-sm font-medium">Caregivers</div>
+                    <div className="overflow-hidden rounded-2xl border border-border/60 bg-background/90">
+                      <div className="border-b border-border/60 bg-muted/30 px-3 py-2 text-sm font-medium">Caregivers</div>
                       <div className="p-3">
                         {selectedPatientEntry.caregivers.length > 0 ? (
                           <div className="flex flex-wrap gap-1.5">
@@ -402,8 +402,8 @@ export const RelationshipTableView = ({ relationships, isMobile, onRefresh }: Pr
                       </div>
                     </div>
 
-                    <div className="rounded-lg border border-border overflow-hidden">
-                      <div className="px-3 py-2 bg-muted/30 border-b border-border text-sm font-medium">Family Members</div>
+                    <div className="overflow-hidden rounded-2xl border border-border/60 bg-background/90">
+                      <div className="border-b border-border/60 bg-muted/30 px-3 py-2 text-sm font-medium">Family Members</div>
                       <div className="p-3">
                         {selectedPatientEntry.family_members && selectedPatientEntry.family_members.length > 0 ? (
                           <div className="flex flex-wrap gap-1.5">

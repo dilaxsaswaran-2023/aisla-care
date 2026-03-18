@@ -419,7 +419,7 @@ export const UserManagement = () => {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between rounded-3xl border border-border/60 bg-gradient-to-br from-primary/10 via-background to-background p-4 shadow-sm">
         <div>
           <h3 className={`font-semibold flex items-center gap-2 ${isMobile ? 'text-sm' : 'text-base'}`}>
             <UserIcon className="w-4 h-4 text-primary" />
@@ -452,16 +452,16 @@ export const UserManagement = () => {
         </div>
       </div>
 
-      <div className="care-card overflow-hidden">
+      <div className="care-card overflow-hidden border border-border/60 bg-background/85 shadow-sm">
         {/* Search Bar */}
-        <div className={`border-b border-muted ${isMobile ? 'p-2' : 'p-4'}`}>
+        <div className={`border-b border-border/60 bg-gradient-to-r from-background via-primary/5 to-background ${isMobile ? 'p-2' : 'p-4'}`}>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
               placeholder="Search by name..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className={`pl-10 ${isMobile ? 'text-xs h-8' : ''}`}
+              className={`rounded-xl border-border/60 bg-background/90 pl-10 ${isMobile ? 'h-8 text-xs' : ''}`}
             />
           </div>
         </div>
@@ -484,7 +484,7 @@ export const UserManagement = () => {
                       <Filter className={`${isMobile ? 'w-3 h-3' : 'w-4 h-4'} text-muted-foreground`} />
                     </button>
                   {roleDropdownOpen && (
-                    <div className="absolute top-full left-0 mt-0 bg-white border border-muted rounded shadow-lg z-50 min-w-32" onClick={(e) => e.stopPropagation()}>
+                    <div className="absolute top-full left-0 z-50 mt-0 min-w-32 rounded-xl border border-border/60 bg-background shadow-lg" onClick={(e) => e.stopPropagation()}>
                       {ROLE_OPTIONS.map((opt) => (
                         <button
                           key={opt.value}
@@ -512,7 +512,7 @@ export const UserManagement = () => {
                     <Filter className={`${isMobile ? 'w-3 h-3' : 'w-4 h-4'} text-muted-foreground`} />
                   </button>
                   {statusDropdownOpen && (
-                    <div className="absolute top-full left-0 mt-0 bg-white border border-muted rounded shadow-lg z-50 min-w-32" onClick={(e) => e.stopPropagation()}>
+                    <div className="absolute top-full left-0 z-50 mt-0 min-w-32 rounded-xl border border-border/60 bg-background shadow-lg" onClick={(e) => e.stopPropagation()}>
                       {STATUS_OPTIONS.map((opt) => (
                         <button
                           key={opt.value}

@@ -80,7 +80,7 @@ export const RelationshipGraph3D = ({ relationships }: RelationshipGraph3DProps)
   };
 
   return (
-    <div className="relative w-full" style={{ height: '70vh' }}>
+    <div className="relative h-[70vh] w-full">
       <ForceGraph3D
         ref={fgRef}
         graphData={graphData}
@@ -112,7 +112,7 @@ export const RelationshipGraph3D = ({ relationships }: RelationshipGraph3DProps)
         d3AlphaDecay={0.05}
         d3VelocityDecay={0.3}
       />
-      <div className="absolute top-2.5 left-2.5 bg-black/70 text-white p-3 rounded-lg text-xs leading-relaxed">
+      <div className="absolute left-2.5 top-2.5 rounded-2xl border border-border/60 bg-background/85 p-3 text-xs leading-relaxed text-foreground shadow-sm backdrop-blur-sm">
         <div className="mb-2 font-bold">Legend:</div>
         <div>
           <span className="text-blue-400">●</span> Caregiver
@@ -123,7 +123,7 @@ export const RelationshipGraph3D = ({ relationships }: RelationshipGraph3DProps)
         <div>
           <span className="text-amber-400">●</span> Family Member
         </div>
-        <div className="mt-2 text-xs text-gray-400">
+        <div className="mt-2 text-xs text-muted-foreground">
           Drag to rotate • Scroll to zoom • Click node to focus
         </div>
       </div>

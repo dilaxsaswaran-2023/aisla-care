@@ -1,5 +1,5 @@
 import React from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card } from '@/components/ui/card';
 import { Users, Activity, LayoutDashboard, Shield, FileText, Link } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { UserManagement } from '@/components/admin/UserManagement';
@@ -95,7 +95,7 @@ const Admin = () => {
       pageDescription={current.desc}
     >
       {activeTab === "overview" && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
           {[
             { label: "Caregivers", value: stats.caregivers, icon: Users, color: "text-primary", tab: "users" },
             { label: "Patients", value: stats.patients, icon: Users, color: "text-success", tab: "users" },
@@ -106,15 +106,15 @@ const Admin = () => {
             return (
               <Card
                 key={stat.label}
-                className="care-card p-5 cursor-pointer hover:border-primary/30 transition-all"
+                className="care-card cursor-pointer overflow-hidden border-border/60 bg-gradient-to-br from-background via-primary/[0.03] to-background p-5 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-primary/30 hover:shadow-md"
                 onClick={() => setActiveTab(stat.tab)}
               >
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{stat.label}</span>
+                  <span className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">{stat.label}</span>
                   <Icon className={`w-4 h-4 ${stat.color}`} />
                 </div>
                 <div className={`stat-value ${stat.color}`}>{stat.value}</div>
-                <p className="text-xs text-muted-foreground mt-1">Click to view</p>
+                <p className="mt-1 text-xs text-muted-foreground">Click to view</p>
               </Card>
             );
           })}

@@ -56,26 +56,26 @@ const ConsentManagement = () => {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h3 className="text-base font-semibold flex items-center gap-2">
+      <div className="rounded-3xl border border-border/60 bg-gradient-to-br from-primary/10 via-background to-background p-4 shadow-sm">
+        <h3 className="flex items-center gap-2 text-base font-semibold">
           <Shield className="w-4 h-4 text-primary" />GDPR Consent Management
         </h3>
         <p className="text-xs text-muted-foreground mt-0.5">User consent records for data processing and privacy compliance</p>
       </div>
 
       {isSample && (
-        <div className="bg-accent/50 border border-primary/10 rounded-lg p-3">
+        <div className="rounded-2xl border border-primary/20 bg-primary/5 p-3 shadow-sm">
           <p className="text-xs text-muted-foreground">Showing sample consent data — real records will appear as users grant consents.</p>
         </div>
       )}
 
       {loading ? (
-        <Card className="care-card"><CardContent className="p-8 text-center text-sm text-muted-foreground">Loading consent records...</CardContent></Card>
+        <Card className="care-card overflow-hidden border-border/60 shadow-sm"><CardContent className="p-8 text-center text-sm text-muted-foreground">Loading consent records...</CardContent></Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {consents.map((consent) => (
-            <Card key={consent.id} className="care-card">
-              <CardHeader className="pb-3">
+            <Card key={consent.id} className="care-card overflow-hidden border-border/60 shadow-sm">
+              <CardHeader className="border-b border-border/60 bg-gradient-to-r from-background via-primary/5 to-background pb-3">
                 <CardTitle className="flex items-center justify-between text-sm">
                   <span className="flex items-center gap-2">
                     <Shield className="w-4 h-4 text-muted-foreground" />

@@ -81,12 +81,12 @@ export const EditUserDialog = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md overflow-visible">
+      <DialogContent className="max-w-md overflow-visible border-border/60 bg-background/95 shadow-lg backdrop-blur-sm">
         <DialogHeader>
           <DialogTitle>Edit User</DialogTitle>
         </DialogHeader>
         {editingUser && (
-          <div className="space-y-4 overflow-visible">
+          <div className="space-y-4 overflow-visible rounded-2xl border border-border/60 bg-background/70 p-4 shadow-sm">
             <div>
               <Label>Full Name*</Label>
               <Input
@@ -131,7 +131,7 @@ export const EditUserDialog = ({
                   // clear subtype if type changes
                   setEditFormData({ ...editFormData, caregiver_type: v, caregiver_subtype: '' });
                 }}>
-                  <SelectTrigger>
+                  <SelectTrigger className="rounded-xl border-border/60 bg-background/90">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -146,7 +146,7 @@ export const EditUserDialog = ({
 
                 <Label className="mt-2">Caregiver Subtype</Label>
                 <Select value={(editFormData as any).caregiver_subtype || ''} onValueChange={(v) => setEditFormData({ ...editFormData, caregiver_subtype: v })}>
-                  <SelectTrigger>
+                  <SelectTrigger className="rounded-xl border-border/60 bg-background/90">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -197,7 +197,7 @@ export const EditUserDialog = ({
 
                 <div className="relative">
                   <div
-                    className="border rounded-lg p-2.5 cursor-pointer flex items-center justify-between bg-white"
+                    className="flex cursor-pointer items-center justify-between rounded-xl border border-border/60 bg-background/90 p-2.5"
                     onClick={() => {
                       setShowEditCaregiverDropdown(!showEditCaregiverDropdown);
                       if (!showEditCaregiverDropdown && editCaregivers.length === 0) {
@@ -219,7 +219,7 @@ export const EditUserDialog = ({
                     <ChevronDown className="w-4 h-4 text-muted-foreground" />
                   </div>
                   {showEditCaregiverDropdown && (
-                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg z-50">
+                    <div className="absolute left-0 right-0 top-full z-50 mt-1 rounded-xl border border-border/60 bg-background shadow-lg">
                       <Input
                         placeholder="Search caregivers..."
                         value={editCaregiverSearch}
@@ -285,7 +285,7 @@ export const EditUserDialog = ({
 
                 <div className="relative">
                   <div
-                    className="border rounded-lg p-2.5 cursor-pointer flex items-center justify-between bg-white"
+                    className="flex cursor-pointer items-center justify-between rounded-xl border border-border/60 bg-background/90 p-2.5"
                     onClick={() => setShowEditFamilyDropdown(!showEditFamilyDropdown)}
                   >
                     <span className="text-sm text-muted-foreground">
@@ -296,7 +296,7 @@ export const EditUserDialog = ({
                     <ChevronDown className="w-4 h-4 text-muted-foreground" />
                   </div>
                   {showEditFamilyDropdown && (
-                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg z-50">
+                    <div className="absolute left-0 right-0 top-full z-50 mt-1 rounded-xl border border-border/60 bg-background shadow-lg">
                       <Input
                         placeholder="Search family members..."
                         value={editFamilySearch}
@@ -330,7 +330,7 @@ export const EditUserDialog = ({
                 </div>
               </div>
             )}
-            <Button onClick={onSaveChanges} className="w-full">
+            <Button onClick={onSaveChanges} className="w-full rounded-xl">
               Save Changes
             </Button>
           </div>

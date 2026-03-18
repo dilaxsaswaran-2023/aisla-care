@@ -41,7 +41,7 @@ export const UserDetailsDialog = ({
 }: UserDetailsDialogProps) => {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="border-border/60 bg-background/95 shadow-lg backdrop-blur-sm">
         <DialogHeader>
           <DialogTitle>User Details</DialogTitle>
         </DialogHeader>
@@ -67,7 +67,7 @@ export const UserDetailsDialog = ({
               </div>
             </div>
 
-            <div className="bg-muted/50 rounded-lg p-4 space-y-3">
+            <div className="space-y-3 rounded-2xl border border-border/60 bg-background/75 p-4 shadow-sm">
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div>
                   <div className="text-muted-foreground">Email</div>
@@ -92,7 +92,7 @@ export const UserDetailsDialog = ({
 
               {/* Role-specific details */}
               {selectedUser.role === 'patient' && (
-                <div className="pt-2 border-t border-muted/30">
+                <div className="border-t border-border/60 pt-2">
                   <div className="text-sm text-muted-foreground mb-1">Geofencing</div>
                   <div className="grid grid-cols-2 gap-2 text-xs">
                     <div>
@@ -120,7 +120,7 @@ export const UserDetailsDialog = ({
               )}
 
               {selectedUser.role === 'caregiver' && (
-                <div className="pt-2 border-t border-muted/30">
+                <div className="border-t border-border/60 pt-2">
                   <div className="text-sm text-muted-foreground mb-1">Caregiver Details</div>
                   <div className="grid grid-cols-2 gap-2 text-xs">
                     <div>
@@ -140,13 +140,13 @@ export const UserDetailsDialog = ({
               )}
 
               {(selectedUser.role === 'family' || selectedUser.role === 'admin') && (
-                <div className="pt-2 border-t border-muted/30">
+                <div className="border-t border-border/60 pt-2">
                   <div className="text-sm text-muted-foreground mb-1">Other</div>
                   <div className="text-xs">Family IDs: {(selectedUser.family_ids && selectedUser.family_ids.length) ? selectedUser.family_ids.join(', ') : '—'}</div>
                 </div>
               )}
 
-              <div className="pt-2 border-t border-muted/30 text-xs">
+              <div className="border-t border-border/60 pt-2 text-xs">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Created</span>
                   <span>{selectedUser.created_at ? formatDateTime(selectedUser.created_at) : '—'}</span>

@@ -103,7 +103,7 @@ export const RelationshipManagement = () => {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between rounded-3xl border border-border/60 bg-gradient-to-br from-primary/10 via-background to-background p-4 shadow-sm">
         <div>
           <h3 className="text-base font-semibold flex items-center gap-2">
             <Users className="w-4 h-4 text-primary" /> Patient Relationships
@@ -148,7 +148,7 @@ export const RelationshipManagement = () => {
 
       <RelationshipStatsBar stats={stats} />
 
-      <div className="overflow-hidden">
+      <div className="overflow-hidden rounded-3xl border border-border/60 bg-background/80 shadow-sm backdrop-blur-sm">
         {viewMode === 'graph' ? (
           loading ? (
             <p className="text-center text-sm text-muted-foreground py-8">Loading relationships...</p>

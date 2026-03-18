@@ -62,7 +62,7 @@ export const AddRelationshipDialog = ({
         </DialogTrigger>
       )}
 
-      <DialogContent>
+      <DialogContent className="max-w-lg border-border/60 bg-background/95 shadow-lg backdrop-blur-sm">
         <DialogHeader>
           <DialogTitle>Create New Relationship</DialogTitle>
           <DialogDescription>
@@ -70,14 +70,14 @@ export const AddRelationshipDialog = ({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 pt-4">
+        <div className="space-y-4 rounded-2xl border border-border/60 bg-background/70 p-4 pt-4 shadow-sm">
           <div className="space-y-2">
             <label className="text-sm font-medium">Patient</label>
             <Select
               value={formData.patient_id}
               onValueChange={(v) => setFormData({ ...formData, patient_id: v })}
             >
-              <SelectTrigger>
+              <SelectTrigger className="rounded-xl border-border/60 bg-background/90">
                 <SelectValue placeholder="Select a patient" />
               </SelectTrigger>
               <SelectContent>
@@ -98,7 +98,7 @@ export const AddRelationshipDialog = ({
                 setFormData({ ...formData, relationship_type: v as any })
               }
             >
-              <SelectTrigger>
+              <SelectTrigger className="rounded-xl border-border/60 bg-background/90">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -120,7 +120,7 @@ export const AddRelationshipDialog = ({
                 setFormData({ ...formData, related_user_id: v })
               }
             >
-              <SelectTrigger>
+              <SelectTrigger className="rounded-xl border-border/60 bg-background/90">
                 <SelectValue
                   placeholder={`Select a ${formData.relationship_type}`}
                 />
@@ -138,7 +138,7 @@ export const AddRelationshipDialog = ({
             </Select>
           </div>
 
-          <Button onClick={onSubmit} className="w-full">
+          <Button onClick={onSubmit} className="w-full rounded-xl">
             Create Relationship
           </Button>
         </div>

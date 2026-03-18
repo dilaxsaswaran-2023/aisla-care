@@ -84,16 +84,16 @@ export const CreateUserDialog = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md border-border/60 bg-background/95 shadow-lg backdrop-blur-sm">
         <DialogHeader>
           <DialogTitle>Create New User</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4">
+        <div className="space-y-4 rounded-2xl border border-border/60 bg-background/70 p-4 shadow-sm">
           {/* Role Selection at Top */}
           <div>
             <Label>Role*</Label>
             <Select value={formData.role} onValueChange={handleRoleChange}>
-              <SelectTrigger>
+              <SelectTrigger className="rounded-xl border-border/60 bg-background/90">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -156,7 +156,7 @@ export const CreateUserDialog = ({
             <div>
               <Label>Caregiver Type</Label>
               <Select value={(formData as any).caregiver_type || ''} onValueChange={(v) => setFormData({ ...formData, caregiver_type: v, caregiver_subtype: '' })}>
-                <SelectTrigger>
+                <SelectTrigger className="rounded-xl border-border/60 bg-background/90">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -218,7 +218,7 @@ export const CreateUserDialog = ({
 
               <div className="relative">
                 <div
-                  className="border rounded-lg p-2.5 cursor-pointer flex items-center justify-between bg-white"
+                  className="flex cursor-pointer items-center justify-between rounded-xl border border-border/60 bg-background/90 p-2.5"
                   onClick={() => setShowCaregiverDropdown(!showCaregiverDropdown)}
                 >
                   <span className="text-sm text-muted-foreground">
@@ -229,7 +229,7 @@ export const CreateUserDialog = ({
                   <ChevronDown className="w-4 h-4 text-muted-foreground" />
                 </div>
                 {showCaregiverDropdown && (
-                  <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg z-50">
+                  <div className="absolute left-0 right-0 top-full z-50 mt-1 rounded-xl border border-border/60 bg-background shadow-lg">
                     <Input
                       placeholder="Search caregivers..."
                       value={caregiverSearch}
@@ -295,7 +295,7 @@ export const CreateUserDialog = ({
 
               <div className="relative">
                 <div
-                  className="border rounded-lg p-2.5 cursor-pointer flex items-center justify-between bg-white"
+                  className="flex cursor-pointer items-center justify-between rounded-xl border border-border/60 bg-background/90 p-2.5"
                   onClick={() => setShowFamilyDropdown(!showFamilyDropdown)}
                 >
                   <span className="text-sm text-muted-foreground">
@@ -306,7 +306,7 @@ export const CreateUserDialog = ({
                   <ChevronDown className="w-4 h-4 text-muted-foreground" />
                 </div>
                 {showFamilyDropdown && (
-                  <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg z-50">
+                  <div className="absolute left-0 right-0 top-full z-50 mt-1 rounded-xl border border-border/60 bg-background shadow-lg">
                     <Input
                       placeholder="Search family members..."
                       value={familySearch}
@@ -341,7 +341,7 @@ export const CreateUserDialog = ({
             </div>
           )}
 
-          <Button onClick={onCreateUser} className="w-full">
+          <Button onClick={onCreateUser} className="w-full rounded-xl">
             Create User
           </Button>
         </div>
