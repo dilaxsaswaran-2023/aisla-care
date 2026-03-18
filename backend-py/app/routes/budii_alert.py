@@ -1,4 +1,5 @@
 import uuid
+import logging
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -9,9 +10,11 @@ from app.models.budii_alert_relationship import BudiiAlertRelationship
 from app.models.user import User
 from app.auth import get_current_user
 from app.services.budii_alert_relationship_service import create_budii_alert_relationships
+from app.services.twilio_notifications import notify_patient_alert_created
 from app.services.audit_log_service import log_audit_event, build_field_changes
 
 router = APIRouter(prefix="/api/budii-alerts", tags=["budii-alerts"])
+logger = logging.getLogger("budii_alert.router")
 
 
 # Request models
@@ -117,6 +120,7 @@ def create_budii_alert(
         patient_id=patient_id,
         event_id=str(uuid.uuid4()),
         alert_type=body.case,
+        title=body.alert_type or body.case,
     )
     db.add(alert)
     db.commit()
@@ -140,6 +144,12 @@ def create_budii_alert(
 
     # Create alert relationships for all caregivers and family members
     relationships = create_budii_alert_relationships(db, alert.id, patient_id)
+
+    try:
+        notify_patient_alert_created(db, alert)
+    except Exception as exc:
+        # Do not block alert creation if external notification fails.
+        logger.warning(f"[BUDII_ALERT] Twilio notification failed for patient_alert={alert.id}: {exc}")
 
     # Build response with alert and relationships
     response = alert.to_dict()

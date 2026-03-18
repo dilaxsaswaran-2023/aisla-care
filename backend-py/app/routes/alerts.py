@@ -18,6 +18,7 @@ from app.models.sos_alert import SosAlert
 from app.services.budii_alert_relationship_service import create_budii_alert_relationships
 from app.services.firebase_helper import push_patient_alert
 from app.services.sos_priority_service import get_sos_priority
+from app.services.twilio_notifications import notify_patient_alert_created
 from app.services.audit_log_service import log_audit_event, build_field_changes
 
 logger = logging.getLogger("alerts.router")
@@ -454,6 +455,7 @@ async def sos_alert(
             patient_id=user_id,
             event_id=str(alert.id),
             alert_type="SOS_REPEAT",
+            title="SOS Emergency - Patient in Critical State",
         )
         db.add(patient_alert)
         db.flush()
@@ -483,6 +485,11 @@ async def sos_alert(
         patient_user = db.query(User).filter(User.id == user_id).first()
         pa_dict["patient_name"] = patient_user.full_name if patient_user else "Unknown"
         push_patient_alert(pa_dict)
+
+        try:
+            notify_patient_alert_created(db, patient_alert)
+        except Exception as exc:
+            logger.warning(f"[SOS] Twilio notification failed for patient_alert={patient_alert.id}: {exc}")
 
     # Emit socket event if available
     sio = getattr(request.app.state, "sio", None)

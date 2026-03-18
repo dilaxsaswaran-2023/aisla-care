@@ -15,7 +15,10 @@ class Settings(BaseSettings):
     # Twilio
     twilio_account_sid: str = ""
     twilio_auth_token: str = ""
+    twilio_api_key_sid: str = ""
+    twilio_api_key_secret: str = ""
     twilio_from_number: str = ""
+    twilio_test_to_number: str = ""
 
     # Azure OpenAI
     azure_openai_api_key: str = ""

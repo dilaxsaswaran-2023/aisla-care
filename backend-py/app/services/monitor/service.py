@@ -9,6 +9,7 @@ from app.models.budii_alert import PatientAlert
 from app.services.alert_relationship_service import create_alert_relationships
 from app.services.budii_alert_relationship_service import create_budii_alert_relationships
 from app.services.firebase_helper import push_patient_alert
+from app.services.twilio_notifications import notify_patient_alert_created
 from app.services.monitor.schemas import MonitorEvent
 from app.services.monitor.checks.check_sos import check_sos
 from app.services.monitor.checks.check_geofence import check_geofence
@@ -69,6 +70,7 @@ async def process_event(event: MonitorEvent, db: Session, sio=None) -> list:
         return []
 
     patient_uuid = uuid.UUID(event.patient_id)
+    created_patient_alerts: list[PatientAlert] = []
 
     for rule in all_rules:
         alert_type = _case_to_alert_type(rule["case"])
@@ -80,12 +82,8 @@ async def process_event(event: MonitorEvent, db: Session, sio=None) -> list:
             patient_alert = PatientAlert(
                 patient_id=patient_uuid,
                 event_id=event.event_id,
-                case=rule["case"],
                 alert_type=alert_type,
                 title=rule["reason"],
-                message=rule.get("reason", ""),
-                status="active",
-                source="monitor",
             )
             db.add(patient_alert)
             db.flush()  # Get patient_alert.id before creating relationships
@@ -96,6 +94,7 @@ async def process_event(event: MonitorEvent, db: Session, sio=None) -> list:
 
             # Push to Firebase for real-time frontend listeners
             push_patient_alert(patient_alert.to_dict())
+            created_patient_alerts.append(patient_alert)
 
         # ── For non-SOS rules, create a user-visible Alert + relationships ────
         # (SOS alert is already created by the /api/alerts/sos endpoint)
@@ -118,6 +117,12 @@ async def process_event(event: MonitorEvent, db: Session, sio=None) -> list:
     print(f"[MONITOR] About to commit database changes. Rules processed: {len(all_rules)}")
     db.commit()
     print(f"[MONITOR] Database commit completed successfully")
+
+    for patient_alert in created_patient_alerts:
+        try:
+            notify_patient_alert_created(db, patient_alert)
+        except Exception as exc:
+            logger.warning(f"[MONITOR] Twilio notification failed for patient_alert={patient_alert.id}: {exc}")
 
     if sio:
         try:

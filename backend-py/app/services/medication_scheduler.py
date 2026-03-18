@@ -13,6 +13,7 @@ from app.models.user import User
 from app.services.alert_relationship_service import create_alert_relationships
 from app.services.budii_alert_relationship_service import create_budii_alert_relationships
 from app.services.firebase_helper import push_patient_alert
+from app.services.twilio_notifications import notify_patient_alert_created
 
 logger = logging.getLogger("medication.scheduler")
 
@@ -169,6 +170,7 @@ def run_medication_check_for_all_patients():
                         patient_id=schedule.patient_id,
                         event_id=str(breach.id),
                         alert_type="MEDICATION_MISSED_HIGH",
+                        title="High Urgency Medication Missed",
                     )
                     db.add(patient_alert)
                     db.flush()
@@ -181,6 +183,13 @@ def run_medication_check_for_all_patients():
                     patient_user = db.query(User).filter(User.id == schedule.patient_id).first()
                     pa_dict["patient_name"] = patient_user.full_name if patient_user else "Unknown"
                     push_patient_alert(pa_dict)
+
+                    try:
+                        notify_patient_alert_created(db, patient_alert)
+                    except Exception as exc:
+                        logger.warning(
+                            f"[MEDICATION_SCHEDULER] Twilio notification failed for patient_alert={patient_alert.id}: {exc}"
+                        )
                 else:
                     db.commit()
 

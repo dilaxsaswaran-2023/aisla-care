@@ -15,6 +15,7 @@ class PatientAlert(Base):
     event_id = Column(String, nullable=False, index=True)
 
     alert_type = Column(String, nullable=False)
+    title = Column(String, nullable=False)
     is_read = Column(Boolean, nullable=False, default=False, server_default="false")
 
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
@@ -26,6 +27,7 @@ class PatientAlert(Base):
             "patient_id": str(self.patient_id),
             "event_id": self.event_id,
             "alert_type": self.alert_type,
+            "title": self.title,
             "is_read": self.is_read,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,

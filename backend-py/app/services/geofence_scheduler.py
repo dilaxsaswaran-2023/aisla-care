@@ -18,6 +18,7 @@ from app.services.alert_relationship_service import create_alert_relationships
 from app.models.alert import Alert
 from app.models.geofence_breach_event import GeofenceBreachEvent
 from app.services.firebase_helper import push_patient_alert
+from app.services.twilio_notifications import notify_patient_alert_created
 
 logger = logging.getLogger("geofence.scheduler")
 
@@ -113,6 +114,7 @@ def run_geofence_check_for_all_patients():
                         patient_id=patient.id,
                         event_id=str(breach.id),
                         alert_type=rule["case"],
+                        title=rule.get("reason", "Geofence Boundary Breach"),
                     )
                     db.add(patient_alert)
                     db.flush()
@@ -132,6 +134,13 @@ def run_geofence_check_for_all_patients():
                     patient_user = db.query(User).filter(User.id == patient.id).first()
                     pa_dict["patient_name"] = patient_user.full_name if patient_user else "Unknown"
                     push_patient_alert(pa_dict)
+
+                    try:
+                        notify_patient_alert_created(db, patient_alert)
+                    except Exception as exc:
+                        logger.warning(
+                            f"[GEOFENCE_SCHEDULER] Twilio notification failed for patient_alert={patient_alert.id}: {exc}"
+                        )
 
                     logger.info(f"[GEOFENCE_SCHEDULER] Created geofence breach alert for patient {patient.id}")
 
