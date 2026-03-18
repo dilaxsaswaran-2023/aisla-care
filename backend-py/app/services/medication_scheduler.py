@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -62,7 +62,7 @@ def _parse_schedule_occurrences(schedule: MedicationSchedule, now_utc: datetime)
 
 def run_medication_check_for_all_patients():
     db = None
-    now_utc = datetime.utcnow()
+    now_utc = datetime.now(timezone.utc)
 
     try:
         db = SessionLocal()

@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import Column, Float, DateTime, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
@@ -15,4 +15,4 @@ class GeofenceBreachEvent(Base):
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)
     distance_meters = Column(Float, nullable=True)
-    breached_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    breached_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)

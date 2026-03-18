@@ -5,7 +5,7 @@ Mirrors the simulator's publishing pattern.
 import requests
 import logging
 from typing import Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 
 logger = logging.getLogger("app.agent_publisher")
 
@@ -47,9 +47,9 @@ def publish_sos_to_agent(alert_id: str, patient_id: str, voice_transcription: st
     event = {
         "event_id": alert_id,
         "patient_id": patient_id,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "sos_triggered": True,
-        "sos_triggered_time": datetime.utcnow().isoformat(),
+        "sos_triggered_time": datetime.now(timezone.utc).isoformat(),
     }
     
     logger.info(

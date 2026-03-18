@@ -1,7 +1,7 @@
 """Geofencing utility functions for patient monitoring."""
 from math import radians, cos, sin, asin, sqrt
 from typing import Optional, Tuple, List, Dict
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 
 
 def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -204,17 +204,17 @@ class GeofenceState:
         exit_alert = False
         if should_alert and (
             self.last_alert_time is None or
-            datetime.utcnow() - self.last_alert_time > timedelta(minutes=5)
+            datetime.now(timezone.utc) - self.last_alert_time > timedelta(minutes=5)
         ):
             exit_alert = True
-            self.last_alert_time = datetime.utcnow()
+            self.last_alert_time = datetime.now(timezone.utc)
         
         re_entry_alert = False
         if should_re_enter and (
             self.last_re_entry_time is None or
-            datetime.utcnow() - self.last_re_entry_time > timedelta(minutes=5)
+            datetime.now(timezone.utc) - self.last_re_entry_time > timedelta(minutes=5)
         ):
             re_entry_alert = True
-            self.last_re_entry_time = datetime.utcnow()
+            self.last_re_entry_time = datetime.now(timezone.utc)
         
         return (exit_alert, re_entry_alert)

@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
@@ -123,7 +123,7 @@ def list_medication_monitor_status(
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid date. Use YYYY-MM-DD")
     else:
-        target_date = datetime.utcnow().date()
+        target_date = datetime.now(timezone.utc).date()
 
     day_start = datetime.combine(target_date, datetime.min.time())
     day_end = day_start + timedelta(days=1)
@@ -144,7 +144,7 @@ def list_medication_monitor_status(
         for row in monitor_rows
     }
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     items = []
     for schedule in schedules:
         if not _is_schedule_due_on_date(schedule, day_start):
@@ -354,7 +354,7 @@ def update_medication_schedule(
         if value is not None:
             setattr(schedule, field, value)
 
-    schedule.updated_at = datetime.utcnow()
+    schedule.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(schedule)
     return schedule.to_dict()
@@ -402,7 +402,7 @@ def toggle_medication_schedule_active(
         raise HTTPException(status_code=403, detail="Access denied")
 
     schedule.is_active = not bool(schedule.is_active)
-    schedule.updated_at = datetime.utcnow()
+    schedule.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(schedule)
     return {"success": True, "is_active": schedule.is_active}
@@ -427,7 +427,7 @@ def mark_medication_taken(
     if not _has_patient_access(db, current_user, schedule.patient_id):
         raise HTTPException(status_code=403, detail="Access denied")
 
-    taken_at = body.taken_at or datetime.utcnow()
+    taken_at = body.taken_at or datetime.now(timezone.utc)
     if taken_at.tzinfo is not None:
         taken_at = taken_at.replace(tzinfo=None)
 
@@ -486,7 +486,7 @@ def mark_medication_taken(
     monitor.taken_at = taken_at
     monitor.status = "taken"
     monitor.notes = body.notes
-    monitor.checked_at = datetime.utcnow()
+    monitor.checked_at = datetime.now(timezone.utc)
 
     db.commit()
     db.refresh(monitor)

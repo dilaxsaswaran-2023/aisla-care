@@ -1,6 +1,6 @@
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 import aiofiles
@@ -232,7 +232,7 @@ def mark_conversation_read(
         .all()
     )
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     updated_ids = []
     for msg in unread_messages:
         msg.status = "read"
@@ -258,7 +258,7 @@ def mark_message_read(
     if msg.recipient_id != user_id:
         raise HTTPException(status_code=403, detail="Not authorised")
     msg.status = "read"
-    msg.read_at = datetime.utcnow()
+    msg.read_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(msg)
     return msg.to_dict()

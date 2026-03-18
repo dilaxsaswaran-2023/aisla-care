@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -56,7 +56,7 @@ def complete_reminder(
     reminder = db.query(Reminder).filter(Reminder.id == uuid.UUID(reminder_id)).first()
     if not reminder:
         raise HTTPException(404, "Reminder not found")
-    reminder.completed_at = datetime.utcnow()
+    reminder.completed_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(reminder)
     return reminder.to_dict()

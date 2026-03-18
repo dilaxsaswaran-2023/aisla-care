@@ -1,6 +1,6 @@
 """Geofencing alerts and monitoring routes."""
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.orm import Session
 
@@ -187,7 +187,7 @@ def check_location(
     
     # Check deduplication: don't send alerts more than once every 5 minutes
     last_alert = patient.geofence_last_alert
-    can_alert = last_alert is None or (datetime.utcnow() - last_alert).total_seconds() > 300
+    can_alert = last_alert is None or (datetime.now(timezone.utc) - last_alert).total_seconds() > 300
     
     # Send exit alert
     if should_alert and can_alert:
@@ -200,7 +200,7 @@ def check_location(
             is_read=False,
         )
         db.add(alert)
-        patient.geofence_last_alert = datetime.utcnow()
+        patient.geofence_last_alert = datetime.now(timezone.utc)
         alert_sent = True
         alert_type = "exit"
     
@@ -215,7 +215,7 @@ def check_location(
             is_read=False,
         )
         db.add(alert)
-        patient.geofence_last_alert = datetime.utcnow()
+        patient.geofence_last_alert = datetime.now(timezone.utc)
         alert_sent = True
         alert_type = "reentry"
     

@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 
 from fastapi import FastAPI
@@ -242,7 +242,7 @@ async def mark_read(sid, data: dict):
             msg = db.query(MessageModel).filter(MessageModel.id == _uuid.UUID(mid)).first()
             if msg and str(msg.recipient_id) == data["reader_id"]:
                 msg.status = "read"
-                msg.read_at = datetime.utcnow()
+                msg.read_at = datetime.now(timezone.utc)
         db.commit()
         await sio.emit(
             "messages_read",
@@ -311,7 +311,7 @@ app.include_router(medication_schedules_router)
 @app.get("/api/health")
 def health():
     """Health check endpoint."""
-    return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
+    return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
 
 # Mount Socket.IO on the FastAPI app
 socket_app = socketio.ASGIApp(sio, app)

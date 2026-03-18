@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import Column, DateTime, ForeignKey, String
 from sqlalchemy.dialects.postgresql import UUID
@@ -13,15 +13,15 @@ class MedicationScheduleMonitor(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     patient_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
     medication_schedule_id = Column(UUID(as_uuid=True), ForeignKey("medication_schedules.id"), nullable=False, index=True)
-    scheduled_for_at = Column(DateTime, nullable=False, index=True)
-    due_at = Column(DateTime, nullable=False, index=True)
-    taken_at = Column(DateTime, nullable=True)
+    scheduled_for_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    due_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    taken_at = Column(DateTime(timezone=True), nullable=True)
     status = Column(String, nullable=False, default="pending")  # pending | taken | missed
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
-    checked_at = Column(DateTime, nullable=True)
+    checked_at = Column(DateTime(timezone=True), nullable=True)
     notes = Column(String, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     def to_dict(self):
         return {

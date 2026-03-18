@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import Column, String, DateTime, Enum, ForeignKey, ARRAY, Boolean, Float, JSON, Integer
 from sqlalchemy.dialects.postgresql import UUID
@@ -43,10 +43,10 @@ class User(Base):
     boundary_radius = Column(Float, nullable=True)  # in meters
     geofence_state = Column(String, nullable=False, default="inside")  # inside | outside_candidate | outside_confirmed
     geofence_outside_count = Column(Integer, nullable=False, default=0)  # samples outside
-    geofence_last_alert = Column(DateTime, nullable=True)  # last time exit alert was sent
+    geofence_last_alert = Column(DateTime(timezone=True), nullable=True)  # last time exit alert was sent
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     def to_dict(self, exclude_password: bool = True):
         d = {

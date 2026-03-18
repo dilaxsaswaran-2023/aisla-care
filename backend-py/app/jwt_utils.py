@@ -1,6 +1,6 @@
 import secrets
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 from jose import jwt, JWTError
@@ -55,7 +55,7 @@ def generate_token_pair(
     ).update({"is_revoked": True})
 
     token_id = str(uuid.uuid4())
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     access_payload = {
         "userId": user_id,

@@ -1,5 +1,5 @@
 """Service for managing patient location data."""
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 import uuid
@@ -54,7 +54,7 @@ def update_patient_location(
     Automatically prunes recent history to keep only last 10 records.
     """
     if captured_at is None:
-        captured_at = datetime.utcnow()
+        captured_at = datetime.now(timezone.utc)
     
     patient_uuid = uuid.UUID(patient_id) if isinstance(patient_id, str) else patient_id
 
@@ -71,7 +71,7 @@ def update_patient_location(
         current.lng = lng
         current.accuracy = accuracy
         current.captured_at = captured_at
-        current.updated_at = datetime.utcnow()
+        current.updated_at = datetime.now(timezone.utc)
     else:
         current = PatientCurrentLocation(
             patient_id=patient_uuid,
@@ -79,7 +79,7 @@ def update_patient_location(
             lng=lng,
             accuracy=accuracy,
             captured_at=captured_at,
-            updated_at=datetime.utcnow(),
+            updated_at=datetime.now(timezone.utc),
         )
         db.add(current)
 

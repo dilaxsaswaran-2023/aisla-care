@@ -109,7 +109,7 @@ def check_geofence(event: MonitorEvent, db: Session) -> list:
             return []
 
     # ── Outside fence — apply cooldown ────────────────────────────────────────
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     if user.geofence_last_alert is not None:
         last_alert = user.geofence_last_alert
         if last_alert.tzinfo is not None:

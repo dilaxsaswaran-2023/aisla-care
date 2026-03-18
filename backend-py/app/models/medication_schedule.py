@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Integer, Text, JSON
 from sqlalchemy.dialects.postgresql import UUID
@@ -25,8 +25,8 @@ class MedicationSchedule(Base):
     urgency_level = Column(String, nullable=False, default="medium")  # "low", "medium", "high"
     grace_period_minutes = Column(Integer, nullable=False, default=60)  # 30, 60, 120
     is_active = Column(Boolean, nullable=False, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     def to_dict(self):
         return {

@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import Boolean, Column, String, Float, DateTime, Enum, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
@@ -25,8 +25,8 @@ class Alert(Base):
     longitude = Column(Float, nullable=True)
     is_read = Column(Boolean, nullable=False, default=False, server_default="false")
     is_added_to_emergency = Column(Boolean, nullable=False, default=False, server_default="false")
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     def to_dict(self):
         return {

@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import Column, DateTime, ForeignKey, String
 from sqlalchemy.dialects.postgresql import UUID
@@ -14,13 +14,13 @@ class MedicationScheduleBreach(Base):
     patient_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
     medication_schedule_id = Column(UUID(as_uuid=True), ForeignKey("medication_schedules.id"), nullable=False, index=True)
     monitor_id = Column(UUID(as_uuid=True), ForeignKey("medication_schedules_monitor.id"), nullable=False, index=True)
-    breach_found_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    breach_found_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     alert_id = Column(UUID(as_uuid=True), ForeignKey("alerts.id"), nullable=True, index=True)
     reason = Column(String, nullable=True)
     status = Column(String, nullable=False, default="active")  # active | acknowledged | resolved
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     def to_dict(self):
         return {

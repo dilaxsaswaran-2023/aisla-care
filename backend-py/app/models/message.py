@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import Column, String, DateTime, ForeignKey, Index, Boolean, JSON
 from sqlalchemy.dialects.postgresql import UUID
@@ -18,10 +18,10 @@ class Message(Base):
     file_url = Column(String, nullable=True)
     file_metadata = Column(JSON, nullable=True)  # {"duration": 30, "size": 1024, "format": "webm"}
     status = Column(String, nullable=False, default="sent")  # sent | delivered | read
-    read_at = Column(DateTime, nullable=True)
+    read_at = Column(DateTime(timezone=True), nullable=True)
     is_deleted = Column(Boolean, nullable=False, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (
         Index("ix_msg_sender_recipient", "sender_id", "recipient_id"),

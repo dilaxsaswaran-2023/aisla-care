@@ -4,7 +4,7 @@ Runs independently every minute for all patient-type users.
 """
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from app.database import SessionLocal
@@ -53,7 +53,7 @@ def run_geofence_check_for_all_patients():
             event = MonitorEvent(
                 event_id=str(uuid.uuid4()),
                 patient_id=str(patient.id),
-                timestamp=datetime.utcnow().isoformat(),
+                timestamp=datetime.now(timezone.utc).isoformat(),
                 lat=location.lat,
                 lng=location.lng,
                 sos_triggered=False,
@@ -74,7 +74,7 @@ def run_geofence_check_for_all_patients():
                         latitude=location.lat,
                         longitude=location.lng,
                         distance_meters=rule.get("context", {}).get("distance_meters"),
-                        breached_at=datetime.utcnow(),
+                        breached_at=datetime.now(timezone.utc),
                     )
                     db.add(breach)
                     db.flush()
