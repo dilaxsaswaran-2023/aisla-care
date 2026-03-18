@@ -33,8 +33,12 @@ const ConsentManagement = () => {
 
   const loadConsents = async () => {
     try {
-      const data = await api.get('/consent-records');
-      setConsents(data && data.length > 0 ? data : sampleConsents);
+      const data: unknown = await api.get('/consent-records');
+      if (Array.isArray(data)) {
+        setConsents(data.length > 0 ? (data as ConsentRecord[]) : sampleConsents);
+      } else {
+        setConsents(sampleConsents);
+      }
     } catch (error) {
       toast({ title: "Error", description: "Failed to load consent records", variant: "destructive" });
       setConsents(sampleConsents);
