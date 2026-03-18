@@ -16,7 +16,7 @@ GEOFENCE_COOLDOWN_MINUTES = 10
 
 
 def haversine_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    r = 6_371_000  # Earth radius in metres
+    r = 6_371_000
     dlat = radians(lat2 - lat1)
     dlon = radians(lon2 - lon1)
     a = sin(dlat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2) ** 2
@@ -24,12 +24,18 @@ def haversine_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> floa
     return r * c
 
 
+def to_utc_aware(dt):
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
 def check_geofence(event: MonitorEvent, db: Session) -> list:
     """
-    Geofence logic ported from agent/budii_langraph/app/graph/nodes/check_geofence.py.
-
     Location is taken from event.lat/lng if present, otherwise falls back to
-    the patient_current_location table.  A 10-minute cooldown prevents repeated
+    the patient_current_location table. A 10-minute cooldown prevents repeated
     alerts for the same breach.
     """
     patient_id = event.patient_id
@@ -41,7 +47,6 @@ def check_geofence(event: MonitorEvent, db: Session) -> list:
         logger.warning(f"[GEOFENCE] invalid patient_id={patient_id}")
         return []
 
-    # ── Fetch geofence config from User -──────────────────────────────────────
     user = db.query(User).filter(User.id == patient_uuid).first()
     if user is None:
         logger.info(f"[GEOFENCE] patient {patient_id} not found")
@@ -57,7 +62,11 @@ def check_geofence(event: MonitorEvent, db: Session) -> list:
 
     fence = None
     if not has_polygon:
-        if boundary.get("latitude") is None or boundary.get("longitude") is None or user.boundary_radius is None:
+        if (
+            boundary.get("latitude") is None
+            or boundary.get("longitude") is None
+            or user.boundary_radius is None
+        ):
             logger.info(f"[GEOFENCE] invalid circular config for patient={patient_id}")
             return []
 
@@ -67,7 +76,6 @@ def check_geofence(event: MonitorEvent, db: Session) -> list:
             "radius_meters": user.boundary_radius,
         }
 
-    # ── Resolve current patient location ─────────────────────────────────────
     if event.lat is not None and event.lng is not None:
         current_lat, current_lng = event.lat, event.lng
         captured_at = event.timestamp
@@ -94,10 +102,11 @@ def check_geofence(event: MonitorEvent, db: Session) -> list:
             return []
         distance = None
     else:
-        # ── Calculate distance for circle geofence ───────────────────────────
         distance = haversine_meters(
-            current_lat, current_lng,
-            fence["home_lat"], fence["home_lng"],
+            current_lat,
+            current_lng,
+            fence["home_lat"],
+            fence["home_lng"],
         )
         logger.info(
             f"[GEOFENCE] patient={patient_id} distance={distance:.2f}m "
@@ -108,12 +117,10 @@ def check_geofence(event: MonitorEvent, db: Session) -> list:
             logger.info(f"[GEOFENCE] inside boundary patient={patient_id}")
             return []
 
-    # ── Outside fence — apply cooldown ────────────────────────────────────────
     now = datetime.now(timezone.utc)
     if user.geofence_last_alert is not None:
-        last_alert = user.geofence_last_alert
-        if last_alert.tzinfo is not None:
-            last_alert = last_alert.astimezone(timezone.utc).replace(tzinfo=None)
+        last_alert = to_utc_aware(user.geofence_last_alert)
+
         if (now - last_alert) < timedelta(minutes=GEOFENCE_COOLDOWN_MINUTES):
             logger.info(
                 f"[GEOFENCE] cooldown active for patient={patient_id} "
@@ -121,7 +128,6 @@ def check_geofence(event: MonitorEvent, db: Session) -> list:
             )
             return []
 
-    # ── Update cooldown timestamp ─────────────────────────────────────────────
     user.geofence_last_alert = now
     db.commit()
 

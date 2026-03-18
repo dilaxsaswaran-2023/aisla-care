@@ -42,13 +42,17 @@ def run_geofence_check_for_all_patients():
         )
         if not patients:
             return
-        for patient in patients:
+        logger.info(f"length of patients{len(patients)}")
+        for patient in patients:            
             location = (
                 db.query(PatientCurrentLocation)
                 .filter(PatientCurrentLocation.patient_id == patient.id)
                 .first()
             )
             if location is None:
+                logger.info(
+                        f"[GEOFENCE_SCHEDULER] skip patient={patient.id} reason=no current location"
+                    )
                 continue
             event = MonitorEvent(
                 event_id=str(uuid.uuid4()),
@@ -58,6 +62,7 @@ def run_geofence_check_for_all_patients():
                 lng=location.lng,
                 sos_triggered=False,
             )
+            logger.info(f"event for check{event}")
             rules = check_geofence(event, db)
             if not rules:
                 continue
@@ -66,6 +71,9 @@ def run_geofence_check_for_all_patients():
                     logger.info(f"[GEOFENCE_SCHEDULER] Rule triggered for patient {patient.id}: {rule}")
 
                     if rule["case"] != "GEOFENCE_BREACH":
+                        logger.info(
+                            f"[GEOFENCE_SCHEDULER] skip patient={patient.id} reason=non-geofence rule"
+                        )
                         continue
 
                     logger.info("[GEOFENCE_SCHEDULER] Step 1 - creating breach")
