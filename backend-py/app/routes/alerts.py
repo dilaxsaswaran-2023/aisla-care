@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime, timezone
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -80,7 +81,7 @@ def _patient_contact_map(db: Session, patient_ids: list[uuid.UUID]) -> dict[str,
     }
 
 
-def _sort_timestamp(value: str | None) -> datetime:
+def _sort_timestamp(value: Optional[str]) -> datetime:
     if not value:
         return datetime(1970, 1, 1, tzinfo=timezone.utc)
 
