@@ -125,7 +125,7 @@ export const CaregiverLocation = () => {
 
   return (
     <div className="space-y-4">
-      <Card className="care-card">
+      <Card className="care-card overflow-hidden border-border/60 bg-background/80 shadow-sm backdrop-blur-sm">
         <CardHeader className="pb-4">
           <div className="flex items-center justify-between">
             <CardTitle className="text-base">Patient Location Tracking</CardTitle>
@@ -143,13 +143,13 @@ export const CaregiverLocation = () => {
         </CardHeader>
         <CardContent className="p-0">
           {loading ? (
-            <div className="h-[600px] flex items-center justify-center bg-muted rounded-b-lg">
+            <div className="h-[600px] flex items-center justify-center border-t border-border/60 bg-muted/40 rounded-b-lg">
               <div className="text-center">
                 <div className="text-muted-foreground">Loading map data...</div>
               </div>
             </div>
           ) : patients.length === 0 ? (
-            <div className="h-[600px] flex items-center justify-center bg-muted rounded-b-lg">
+            <div className="h-[600px] flex items-center justify-center border-t border-border/60 bg-muted/40 rounded-b-lg">
               <div className="text-center">
                 <AlertCircle className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
                 <div className="text-muted-foreground">No patients assigned</div>
@@ -158,7 +158,7 @@ export const CaregiverLocation = () => {
           ) : (
             <>
               {locations.length === 0 && (
-                <div className="bg-yellow-50 border border-yellow-200 rounded-none p-4 text-sm text-yellow-800">
+                <div className="border-y border-border/60 bg-primary/[0.06] rounded-none p-4 text-sm text-primary">
                   ⚠️ No location data available yet. Patients need to share their location first.
                 </div>
               )}
@@ -205,10 +205,10 @@ export const CaregiverLocation = () => {
         </CardContent>
       </Card>
 
-      <Card className="care-card bg-blue-50 border-blue-200">
+      <Card className="care-card border-border/60 bg-gradient-to-br from-background via-primary/[0.05] to-background">
         <CardContent className="pt-4">
-          <p className="text-xs text-blue-800">
-            📍 <strong>Tip:</strong> Showing {locations.length} of {patients.length} patient locations. 
+          <p className="text-xs text-muted-foreground">
+            📍 <strong className="text-primary">Tip:</strong> Showing {locations.length} of {patients.length} patient locations. 
             Click on any marker to see patient details.
           </p>
         </CardContent>

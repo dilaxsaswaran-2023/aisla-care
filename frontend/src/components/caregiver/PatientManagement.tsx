@@ -234,7 +234,7 @@ export const PatientManagement = ({ isMobile }: { isMobile?: boolean }) => {
 
   return (
     <>
-      <Card className="care-card">
+      <Card className="care-card border-border/60 bg-background/80 shadow-sm backdrop-blur-sm">
         <CardHeader className="pb-4">
           <div className="flex items-center justify-between">
             <CardTitle className="text-base">My Patients</CardTitle>
@@ -245,11 +245,11 @@ export const PatientManagement = ({ isMobile }: { isMobile?: boolean }) => {
                   Add User
                 </Button>
               </DialogTrigger>
-              <DialogContent className="max-w-md">
+              <DialogContent className="max-w-md border-border/60 bg-background/95 shadow-lg backdrop-blur-sm">
                 <DialogHeader>
                   <DialogTitle>Add Patient or Family Member</DialogTitle>
                 </DialogHeader>
-                <div className="space-y-4">
+                <div className="space-y-4 rounded-2xl border border-border/60 bg-background/70 p-4 shadow-sm">
                   {/* User Type Selection */}
                   <div>
                     <Label>User Type*</Label>
@@ -324,7 +324,7 @@ export const PatientManagement = ({ isMobile }: { isMobile?: boolean }) => {
                         <Label>Family Member (Optional)</Label>
                         <div className="relative">
                           <div
-                            className="border rounded-lg p-2.5 cursor-pointer flex items-center justify-between bg-white"
+                            className="flex cursor-pointer items-center justify-between rounded-xl border border-border/60 bg-background/90 p-2.5"
                             onClick={() => {
                               setShowPatientDropdown(!showPatientDropdown);
                               if (!showPatientDropdown && userPatients.length === 0) {
@@ -340,12 +340,12 @@ export const PatientManagement = ({ isMobile }: { isMobile?: boolean }) => {
                             <ChevronDown className="w-4 h-4 text-muted-foreground" />
                           </div>
                           {showPatientDropdown && (
-                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg z-50">
+                            <div className="absolute top-full left-0 right-0 z-50 mt-1 rounded-xl border border-border/60 bg-background shadow-lg">
                               <Input
                                 placeholder="Search family members..."
                                 value={patientSearch}
                                 onChange={(e) => handlePatientSearchChange(e.target.value)}
-                                className="border-0 border-b rounded-none"
+                                className="rounded-none border-0 border-b border-border/60"
                               />
                               <div className="max-h-40 overflow-y-auto">
                                 {userPatients.length > 0 ? (
@@ -368,8 +368,8 @@ export const PatientManagement = ({ isMobile }: { isMobile?: boolean }) => {
                         </div>
                       </div>
 
-                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                        <p className="text-xs text-blue-800">
+                      <div className="rounded-xl border border-border/60 bg-primary/[0.06] p-3">
+                        <p className="text-xs text-muted-foreground">
                           ℹ️ You will be automatically set as the caregiver for this patient.
                         </p>
                       </div>
@@ -386,13 +386,13 @@ export const PatientManagement = ({ isMobile }: { isMobile?: boolean }) => {
         </CardHeader>
         <CardContent>
           {patients.length === 0 && (
-            <div className="bg-muted/50 border border-border rounded-lg p-3 mb-4">
+            <div className="mb-4 rounded-xl border border-border/60 bg-background/60 p-3">
               <p className="text-xs text-muted-foreground">No patients found. Add patients to see live information.</p>
             </div>
           )}
           <div className="space-y-3">
             {patients.map((patient) => (
-              <div key={patient.id} className="flex items-center justify-between p-4 rounded-lg border border-border bg-card hover:shadow-sm transition-shadow">
+              <div key={patient.id} className="flex items-center justify-between rounded-xl border border-border/60 bg-background/85 p-4 transition-all duration-200 hover:border-primary/30 hover:shadow-sm">
                 <div className="flex items-center gap-4">
                   <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
                     <span className="text-sm font-bold text-primary">

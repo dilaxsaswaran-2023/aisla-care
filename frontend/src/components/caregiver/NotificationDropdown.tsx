@@ -111,9 +111,9 @@ export const NotificationDropdown = ({
 
   const getAlertStyle = (source?: string) => {
     if (source === 'budii') {
-      return { bg: "bg-destructive/10", icon: "text-destructive", itemBg: "bg-destructive/10", border: "border-destructive" };
+      return { bg: "bg-destructive/10", icon: "text-destructive", itemBg: "bg-destructive/[0.08]", border: "border-l-destructive" };
     }
-    return { bg: "bg-amber-500/10", icon: "text-amber-600", itemBg: "bg-amber-500/10", border: "border-amber-500" };
+    return { bg: "bg-primary/10", icon: "text-primary", itemBg: "bg-primary/[0.06]", border: "border-l-primary/50" };
   };
 
   return (
@@ -121,7 +121,7 @@ export const NotificationDropdown = ({
       <Button
         variant={isMobile ? "ghost" : "outline"}
         size={isMobile ? "icon" : "default"}
-        className="relative gap-1.5"
+        className="relative gap-1.5 border-border/60 bg-background/80 hover:bg-background"
         onClick={() => setOpen(v => !v)}
         title="Notifications"
       >
@@ -137,8 +137,8 @@ export const NotificationDropdown = ({
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-10 z-50 w-80 rounded-xl border border-border bg-card shadow-xl overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+          <div className="absolute right-0 top-10 z-50 w-80 overflow-hidden rounded-2xl border border-border/60 bg-background/95 shadow-lg backdrop-blur-sm">
+            <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
               <span className="text-sm font-semibold">Notifications</span>
               <div className="flex items-center gap-2">
                 {unread > 0 && (
@@ -168,7 +168,7 @@ export const NotificationDropdown = ({
                   return (
                     <div
                       key={alert.id}
-                      className={`flex items-start gap-3 px-4 py-3 cursor-pointer transition-colors ${s.itemBg} ${s.border} hover:opacity-80`}
+                      className={`flex cursor-pointer items-start gap-3 border-l-2 px-4 py-3 transition-colors ${s.itemBg} ${s.border} hover:opacity-90`}
                       onClick={() => handleAlertClick(alert)}
                     >
                       <div className={`mt-0.5 w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${s.bg}`}>

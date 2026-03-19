@@ -235,7 +235,7 @@ const Caregiver = () => {
             size={isMobile ? "icon" : "default"}
             onClick={onRefresh}
             title="Refresh"
-            className="gap-1.5"
+            className="gap-1.5 border border-border/60 bg-background/80 hover:bg-background"
           >
             <RefreshCw className="w-4 h-4" />
             {!isMobile && <span className="hidden sm:inline text-xs">Refresh</span>}
@@ -245,7 +245,7 @@ const Caregiver = () => {
       }
     >
       {emergencyBannerVisible && firebaseEmergencyAlert && (
-        <div className="mb-4">
+        <div className="mb-4 gentle-fade-in">
           <EmergencyBanner
             alert={firebaseEmergencyAlert}
             onClose={() => { setEmergencyBannerVisible(false); clearLatest(); }}

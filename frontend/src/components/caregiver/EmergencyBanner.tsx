@@ -29,26 +29,26 @@ export const EmergencyBanner = ({ alert, onClose }: EmergencyBannerProps) => {
   const alertTypeLabel = alert.alert_type === 'sos' ? '🚨 SOS ALERT' : '⚠️ GEOFENCE BREACH';
 
   return (
-    <div className="bg-red-50 border-b-2 border-red-500 p-4">
+    <div className="rounded-2xl border border-destructive/30 bg-gradient-to-r from-destructive/10 via-background to-background p-4 shadow-sm">
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-start gap-3 flex-1">
-          <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+          <AlertCircle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" />
           <div className="flex-1 min-w-0">
-            <div className="font-bold text-red-900 text-sm mb-1">
+            <div className="font-bold text-destructive text-sm mb-1 tracking-wide">
               {alertTypeLabel}
             </div>
-            <div className="text-red-800 font-semibold text-sm break-words">
+            <div className="text-foreground font-semibold text-sm break-words">
               {alert.patient_name ? `${alert.patient_name}: ` : ''}{alert.title}
             </div>
-            <div className="text-red-700 text-xs mt-1 break-words">
+            <div className="text-muted-foreground text-xs mt-1 break-words">
               {alert.message}
             </div>
             {alert.voice_transcription && (
-              <div className="text-red-700 text-xs italic mt-1 break-words">
+              <div className="text-muted-foreground text-xs italic mt-1 break-words">
                 📝 {alert.voice_transcription}
               </div>
             )}
-            <div className="text-red-600 text-xs mt-1">
+            <div className="text-destructive/80 text-xs mt-1">
               {formatTime(alert.created_at)}
             </div>
           </div>
@@ -57,7 +57,7 @@ export const EmergencyBanner = ({ alert, onClose }: EmergencyBannerProps) => {
           variant="ghost"
           size="icon"
           onClick={onClose}
-          className="flex-shrink-0 hover:bg-red-100 text-red-600"
+          className="flex-shrink-0 text-destructive hover:bg-destructive/10"
           title="Close banner"
         >
           <X className="w-4 h-4" />

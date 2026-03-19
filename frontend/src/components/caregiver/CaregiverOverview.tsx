@@ -28,8 +28,8 @@ function alertStyle(source?: string) {
     // stronger background and border for serious budii alerts
     return { border: "border-destructive", bg: "bg-destructive/5", icon: "text-destructive", itemBg: "bg-destructive/10" };
   }
-  // Normal alerts always use amber
-  return { border: "border-amber-500", bg: "bg-amber-500/10", icon: "text-amber-600", itemBg: "" };
+  // Normal alerts use the portal primary accent
+  return { border: "border-primary/50", bg: "bg-primary/[0.08]", icon: "text-primary", itemBg: "" };
 }
 
 const AlertCard = ({ alert, detailed }: { alert: AlertItem; detailed?: boolean }) => {
