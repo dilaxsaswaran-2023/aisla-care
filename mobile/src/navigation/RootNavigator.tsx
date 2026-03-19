@@ -332,7 +332,7 @@ export function RootNavigator(): React.JSX.Element {
               method: 'POST',
               payload: requestBody,
             });
-          }♦
+          }
 
           try {
             const response = await apiClient.sendSosAlert(payload);

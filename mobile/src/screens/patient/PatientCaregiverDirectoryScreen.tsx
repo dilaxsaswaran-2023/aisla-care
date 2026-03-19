@@ -110,11 +110,6 @@ function CaregiverCard({
             {caregiver.name}
           </Text>
           <Text style={styles.caregiverRole}>Caregiver</Text>
-          {caregiver.email ? (
-            <Text numberOfLines={1} style={styles.caregiverEmail}>
-              {caregiver.email}
-            </Text>
-          ) : null}
         </View>
       </View>
 
@@ -374,19 +369,15 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   caregiverName: {
-    fontFamily: 'Poppins-ExtraBold',
-    fontSize: 24,
+    fontFamily: 'Poppins-Bold',
+    fontSize: 20,
     color: '#1B2F48',
     letterSpacing: -0.5,
   },
   caregiverRole: {
-    fontFamily: 'Poppins-Bold',
-    fontSize: 16,
+    fontFamily: 'Poppins-Medium',
+    fontSize: 14,
     color: '#2F4A62',
-  },
-  caregiverEmail: {
-    fontSize: 13,
-    color: '#6C8094',
   },
   chatActionButton: {
     width: 72,
