@@ -1,5 +1,8 @@
 import React, {useEffect, useRef, useState} from 'react';
+import NetInfo from '@react-native-community/netinfo';
 import {
+  ActivityIndicator,
+  Alert,
   Animated,
   Image,
   Modal,
@@ -15,18 +18,40 @@ import {
 } from 'react-native';
 import FeatherIcons from 'react-native-vector-icons/Feather';
 
+import {apiClient, getErrorMessage} from '../../api/client';
 import {colors} from '../../constants/colors';
 import {audioService} from '../../services/audioService';
+import {
+  caregiverCallService,
+  caregiverPhoneNumber,
+} from '../../services/caregiverCallService';
 import {speechService} from '../../services/speechService';
-import type {Reminder as AppReminder} from '../../types/models';
+import type {
+  MedicationSchedule,
+  Reminder as AppReminder,
+} from '../../types/models';
 
 const appLogo = require('../../assets/aisla-logo.png');
-const buddiBotIcon = require('../../assets/bot.png');
+const buddiBotIcon = require('../../assets/animeBuddy.gif');
 const themeBlue = '#177BC8';
 const themeBlueSoft = '#EAF6FF';
 const themeGreenSoft = '#1bcf03';
+const themeMedication = '#B7791F';
+const themeMedicationSoft = '#FFF4D9';
+const themeMedicationCard = '#FFFCF2';
 const themeRed = '#D93E32';
 const themeRedSoft = '#FFF1EF';
+const reminderScheduleBlue = '#5AA6E6';
+const reminderScheduleBlueSoft = '#EEF7FF';
+const reminderScheduleRose = '#E86D78';
+const reminderScheduleRoseSoft = '#FFF1F3';
+const reminderScheduleMint = '#20C8BE';
+const reminderScheduleMintSoft = '#EAFCF8';
+const reminderTimelineMinimumHour = 8;
+const reminderTimelineMaximumHour = 16;
+const reminderTimelineBaseRowHeight = 96;
+const reminderTimelineExtraCardHeight = 72;
+const offlineCaregiverMessage = "You are offline. I'm calling your caregiver.";
 const sosPrompt = 'Are you okay? What do you need?';
 const budiiPrompt = "Hi, I'm Budii. Are you okay? What do you need?";
 const reminderAlertLeadMs = 60_000;
@@ -34,6 +59,10 @@ const reminderAlertTrailMs = 60_000;
 const reminderClockTickMs = 1_000;
 const reminderAnnouncementIntervalMs = 30_000;
 const sosCountdownDurationSeconds = 10;
+const buddiSpeechMinimumLengthMs = 60_000;
+const buddiSpeechCompleteSilenceMs = 12_000;
+const buddiSpeechPossibleSilenceMs = 8_000;
+const buddiVoicePulseThreshold = 2;
 
 type PatientHomeScreenProps = {
   onSignOut: () => Promise<void> | void;
@@ -55,6 +84,10 @@ type SpeechErrorEvent = {
   };
 };
 
+type SpeechVolumeEvent = {
+  value?: number;
+};
+
 type VoiceModule = {
   start: (locale: string, options?: Record<string, unknown>) => Promise<void>;
   stop: () => Promise<void>;
@@ -67,23 +100,15 @@ type VoiceModule = {
   onSpeechError?: (event: SpeechErrorEvent) => void;
   onSpeechResults?: (event: SpeechResultsEvent) => void;
   onSpeechPartialResults?: (event: SpeechResultsEvent) => void;
-};
-
-type ReminderCardProps = {
-  badge: string;
-  title: string;
-  time: string;
-  description: string;
-  alertMessage?: string;
-  badgeBackgroundColor: string;
-  badgeTextColor: string;
-  completed?: boolean;
-  alerting?: boolean;
-  onPress?: () => void;
+  onSpeechVolumeChanged?: (event: SpeechVolumeEvent) => void;
 };
 
 type DashboardTab = 'home' | 'reminders';
 type VoiceSurface = 'sos' | 'buddi';
+type ReminderTimelineState = 'scheduled' | 'completed' | 'missed' | 'alerting';
+type ReminderFeedItem = AppReminder & {
+  kind: 'reminder' | 'medication';
+};
 
 let cachedVoiceModule: VoiceModule | null = null;
 
@@ -146,17 +171,6 @@ function getReminderTimestamp(scheduledFor: string): number | null {
   return scheduledAt.getTime();
 }
 
-function buildReminderDate(
-  dayOffset: number,
-  hour: number,
-  minute: number,
-): string {
-  const scheduledAt = new Date();
-  scheduledAt.setDate(scheduledAt.getDate() + dayOffset);
-  scheduledAt.setHours(hour, minute, 0, 0);
-  return scheduledAt.toISOString();
-}
-
 function formatReminderTime(scheduledFor: string): string {
   const scheduledAt = new Date(scheduledFor);
 
@@ -187,6 +201,121 @@ function formatReminderTime(scheduledFor: string): string {
   });
 }
 
+function getStartOfDayTimestamp(value: number | Date): number {
+  const date = new Date(value);
+  date.setHours(0, 0, 0, 0);
+  return date.getTime();
+}
+
+function addDaysToTimestamp(dayTimestamp: number, days: number): number {
+  const nextDate = new Date(dayTimestamp);
+  nextDate.setDate(nextDate.getDate() + days);
+  nextDate.setHours(0, 0, 0, 0);
+  return nextDate.getTime();
+}
+
+function isSameLocalDay(left: number | Date, right: number | Date): boolean {
+  return getStartOfDayTimestamp(left) === getStartOfDayTimestamp(right);
+}
+
+function formatReminderClockTime(scheduledFor: string): string {
+  const scheduledAt = new Date(scheduledFor);
+
+  if (Number.isNaN(scheduledAt.getTime())) {
+    return scheduledFor;
+  }
+
+  return scheduledAt.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+}
+
+function formatReminderDayHeading(dayTimestamp: number): string {
+  return new Date(dayTimestamp).toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+function formatReminderDayMeta(
+  dayTimestamp: number,
+  currentTimestamp: number,
+): string {
+  const dayDifference = Math.round(
+    (getStartOfDayTimestamp(dayTimestamp) - getStartOfDayTimestamp(currentTimestamp)) /
+      (24 * 60 * 60 * 1000),
+  );
+
+  if (dayDifference === 0) {
+    return 'Today';
+  }
+
+  if (dayDifference === 1) {
+    return 'Tomorrow';
+  }
+
+  if (dayDifference === -1) {
+    return 'Yesterday';
+  }
+
+  return new Date(dayTimestamp).toLocaleDateString('en-US', {
+    weekday: 'short',
+  });
+}
+
+function formatTimelineHour(hour: number): string {
+  const normalizedHour = ((hour % 24) + 24) % 24;
+  const meridiem = normalizedHour >= 12 ? 'PM' : 'AM';
+  const displayHour = normalizedHour % 12 === 0 ? 12 : normalizedHour % 12;
+  return `${displayHour} ${meridiem}`;
+}
+
+function buildReminderIsoAtLocalTime(
+  dayTimestamp: number,
+  hours: number,
+  minutes: number,
+): string {
+  const date = new Date(dayTimestamp);
+  date.setHours(hours, minutes, 0, 0);
+  return date.toISOString();
+}
+
+function buildDummyReminderFeed(dayTimestamp: number): ReminderFeedItem[] {
+  return [
+    {
+      id: 'dummy-medication-morning',
+      kind: 'medication',
+      label: 'Morning Medication',
+      scheduledFor: buildReminderIsoAtLocalTime(dayTimestamp, 8, 0),
+      status: 'pending',
+    },
+    {
+      id: 'dummy-water-morning',
+      kind: 'reminder',
+      label: 'Drink Water',
+      scheduledFor: buildReminderIsoAtLocalTime(dayTimestamp, 9, 30),
+      status: 'completed',
+    },
+    {
+      id: 'dummy-medication-lunch',
+      kind: 'medication',
+      label: 'Lunch Medication',
+      scheduledFor: buildReminderIsoAtLocalTime(dayTimestamp, 13, 0),
+      status: 'pending',
+    },
+    {
+      id: 'dummy-water-afternoon',
+      kind: 'reminder',
+      label: 'Drink Water',
+      scheduledFor: buildReminderIsoAtLocalTime(dayTimestamp, 15, 0),
+      status: 'pending',
+    },
+  ];
+}
+
 function formatRemainingTime(durationMs: number): string {
   const totalSeconds = Math.max(0, Math.ceil(durationMs / 1000));
   const minutes = Math.floor(totalSeconds / 60);
@@ -203,7 +332,7 @@ function formatCountdownSeconds(seconds: number): string {
 }
 
 function isReminderAlerting(
-  reminder: AppReminder,
+  reminder: ReminderFeedItem,
   currentTime: number,
 ): boolean {
   const scheduledTime = getReminderTimestamp(reminder.scheduledFor);
@@ -219,7 +348,7 @@ function isReminderAlerting(
 }
 
 function getReminderAlertMeta(
-  reminder: AppReminder,
+  reminder: ReminderFeedItem,
   currentTime: number,
 ): string | null {
   const scheduledTime = getReminderTimestamp(reminder.scheduledFor);
@@ -242,7 +371,7 @@ function getReminderAlertMeta(
 }
 
 function buildReminderAnnouncement(
-  reminder: AppReminder,
+  reminder: ReminderFeedItem,
   currentTime: number,
 ): string {
   const scheduledTime = getReminderTimestamp(reminder.scheduledFor);
@@ -259,59 +388,123 @@ function buildReminderAnnouncement(
   return `Reminder. ${title}. It is time now.`;
 }
 
-function getReminderBadge(label: string): string {
-  const parts = label.trim().split(/\s+/).filter(Boolean);
-
-  if (parts.length === 0) {
-    return 'RM';
-  }
-
-  return parts
-    .slice(0, 2)
-    .map(part => part[0]?.toUpperCase() ?? '')
-    .join('');
-}
-
-function getReminderDescription(reminder: AppReminder): string {
+function getReminderTimelineState(
+  reminder: ReminderFeedItem,
+  currentTime: number,
+): ReminderTimelineState {
   if (reminder.status === 'completed') {
-    return 'This reminder has been completed and saved to your care log.';
+    return 'completed';
   }
 
-  return 'Scheduled care task from your AISLA reminders.';
+  if (isReminderAlerting(reminder, currentTime)) {
+    return 'alerting';
+  }
+
+  const scheduledTime = getReminderTimestamp(reminder.scheduledFor);
+
+  if (scheduledTime !== null && scheduledTime < currentTime) {
+    return 'missed';
+  }
+
+  return 'scheduled';
 }
 
-const dummyReminders: AppReminder[] = [
-  {
-    id: 'reminder-breathing',
-    label: 'Breathing exercise',
-    scheduledFor: buildReminderDate(0, 18, 5),
-    status: 'pending',
-  },
-  {
-    id: 'reminder-hydration',
-    label: 'Drink water',
-    scheduledFor: buildReminderDate(0, 16, 50),
-    status: 'pending',
-  },
-  {
-    id: 'reminder-medication',
-    label: 'Evening medication',
-    scheduledFor: buildReminderDate(0, 18, 40),
-    status: 'pending',
-  },
-  {
-    id: 'reminder-checkin',
-    label: 'Daily caregiver check-in',
-    scheduledFor: buildReminderDate(1, 8, 30),
-    status: 'pending',
-  },
-  {
-    id: 'reminder-breakfast',
-    label: 'Breakfast medication',
-    scheduledFor: buildReminderDate(0, 7, 30),
-    status: 'completed',
-  },
-];
+function getReminderTimelineStatusLabel(
+  state: ReminderTimelineState,
+): string {
+  switch (state) {
+    case 'completed':
+      return 'Completed';
+    case 'missed':
+      return 'Missed';
+    case 'alerting':
+      return 'Due now';
+    default:
+      return 'Scheduled';
+  }
+}
+
+function getReminderTimelineIconName(reminder: ReminderFeedItem): string {
+  const label = reminder.label.toLowerCase();
+
+  if (reminder.kind === 'medication') {
+    return 'activity';
+  }
+
+  if (label.includes('water') || label.includes('drink')) {
+    return 'droplet';
+  }
+
+  if (label.includes('food') || label.includes('meal')) {
+    return 'coffee';
+  }
+
+  return reminder.status === 'completed' ? 'check' : 'bell';
+}
+
+function getReminderTimelinePalette(
+  reminder: ReminderFeedItem,
+  state: ReminderTimelineState,
+): {
+  accentColor: string;
+  borderColor: string;
+  cardBackgroundColor: string;
+  iconBackgroundColor: string;
+  iconColor: string;
+  metaColor: string;
+  statusColor: string;
+  titleColor: string;
+} {
+  if (state === 'completed') {
+    return {
+      accentColor: reminderScheduleMint,
+      borderColor: '#BDEFE9',
+      cardBackgroundColor: reminderScheduleMintSoft,
+      iconBackgroundColor: '#D7F7F2',
+      iconColor: reminderScheduleMint,
+      metaColor: '#5EA9A3',
+      statusColor: reminderScheduleMint,
+      titleColor: '#31726D',
+    };
+  }
+
+  if (state === 'missed' || state === 'alerting') {
+    return {
+      accentColor: reminderScheduleRose,
+      borderColor: '#F7CDD2',
+      cardBackgroundColor: reminderScheduleRoseSoft,
+      iconBackgroundColor: '#FFE0E4',
+      iconColor: reminderScheduleRose,
+      metaColor: '#C47880',
+      statusColor: reminderScheduleRose,
+      titleColor: '#C84A57',
+    };
+  }
+
+  if (reminder.kind === 'medication') {
+    return {
+      accentColor: reminderScheduleRose,
+      borderColor: '#F5D8DC',
+      cardBackgroundColor: '#FFF8F9',
+      iconBackgroundColor: '#FFECEF',
+      iconColor: reminderScheduleRose,
+      metaColor: '#C17C84',
+      statusColor: reminderScheduleRose,
+      titleColor: '#CC5360',
+    };
+  }
+
+  return {
+    accentColor: reminderScheduleBlue,
+    borderColor: '#D5E9FA',
+    cardBackgroundColor: reminderScheduleBlueSoft,
+    iconBackgroundColor: '#DFF0FF',
+    iconColor: reminderScheduleBlue,
+    metaColor: '#7B9BB9',
+    statusColor: '#7DCDBE',
+    titleColor: '#3D8BC8',
+  };
+}
 
 function BrandHeader({
   onSignOut,
@@ -346,79 +539,28 @@ function BrandHeader({
   );
 }
 
-function ReminderCard({
-  badge,
-  title,
-  time,
-  description,
-  alertMessage,
-  badgeBackgroundColor,
-  badgeTextColor,
-  completed,
-  alerting,
-  onPress,
-}: ReminderCardProps): React.JSX.Element {
+function ReminderStatCard({
+  value,
+  label,
+  accentColor,
+  borderColor,
+}: {
+  value: number;
+  label: string;
+  accentColor: string;
+  borderColor: string;
+}): React.JSX.Element {
   return (
-    <Pressable
-      accessibilityRole={onPress ? 'button' : undefined}
-      disabled={!onPress}
-      onPress={onPress}
-      style={({pressed}) => [
-        styles.reminderCard,
-        alerting ? styles.reminderCardAlerting : null,
-        onPress && pressed ? styles.pressed : null,
+    <View
+      style={[
+        styles.reminderSummaryCard,
+        {borderColor},
       ]}>
-      <View
-        style={[
-          styles.reminderBadge,
-          {backgroundColor: badgeBackgroundColor},
-          alerting ? styles.reminderBadgeAlerting : null,
-        ]}>
-        <Text style={[styles.reminderBadgeText, {color: badgeTextColor}]}>
-          {badge}
-        </Text>
-      </View>
-
-      <View style={styles.reminderBody}>
-        <View style={styles.reminderHeaderRow}>
-          <Text style={[styles.reminderTitle, styles.reminderTitleHeader]}>
-            {title}
-          </Text>
-          <View
-            style={[
-              styles.reminderStatus,
-              alerting
-                ? styles.reminderStatusAlerting
-                : completed
-                ? styles.reminderStatusComplete
-                : styles.reminderStatusPending,
-            ]}>
-            <Text
-              style={[
-                styles.reminderStatusText,
-                alerting
-                  ? styles.reminderStatusTextAlerting
-                  : completed
-                  ? styles.reminderStatusTextComplete
-                  : styles.reminderStatusTextPending,
-              ]}>
-              {alerting ? 'Alarm active' : completed ? 'Completed' : 'Pending'}
-            </Text>
-          </View>
-        </View>
-        <Text
-          style={[
-            styles.reminderTime,
-            alerting ? styles.reminderTimeAlerting : null,
-          ]}>
-          {time}
-        </Text>
-        {alertMessage ? (
-          <Text style={styles.reminderAlertMessage}>{alertMessage}</Text>
-        ) : null}
-        <Text style={styles.reminderDescription}>{description}</Text>
-      </View>
-    </Pressable>
+      <Text style={[styles.reminderSummaryValue, {color: accentColor}]}>
+        {value}
+      </Text>
+      <Text style={styles.reminderSummaryLabel}>{label}</Text>
+    </View>
   );
 }
 
@@ -473,10 +615,19 @@ export function PatientHomeScreen({
   const [activeVoiceSurface, setActiveVoiceSurface] =
     useState<VoiceSurface | null>(null);
   const [isListening, setIsListening] = useState(false);
+  const [isBuddiVoiceDetected, setIsBuddiVoiceDetected] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [partialTranscript, setPartialTranscript] = useState('');
   const [sosError, setSosError] = useState('');
+  const [isOffline, setIsOffline] = useState(false);
+  const [offlineCaregiverStatus, setOfflineCaregiverStatus] = useState('');
   const [currentTime, setCurrentTime] = useState(() => Date.now());
+  const [selectedReminderDay, setSelectedReminderDay] = useState(() =>
+    getStartOfDayTimestamp(Date.now()),
+  );
+  const [reminders, setReminders] = useState<ReminderFeedItem[]>([]);
+  const [isLoadingReminders, setIsLoadingReminders] = useState(true);
+  const [remindersError, setRemindersError] = useState('');
   const [silencedReminderId, setSilencedReminderId] = useState<string | null>(
     null,
   );
@@ -486,9 +637,170 @@ export function PatientHomeScreen({
   const [isSubmittingSos, setIsSubmittingSos] = useState(false);
   const [sosSuccessMessage, setSosSuccessMessage] = useState('');
   const sosRequestIdRef = useRef(0);
+  const activeVoiceSurfaceRef = useRef<VoiceSurface | null>(null);
+  const isListeningRef = useRef(false);
+  const buddiRestartTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const buddiVoiceActivityTimeoutRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
   const reminderFade = useRef(new Animated.Value(0)).current;
+  const buddiPulse = useRef(new Animated.Value(0)).current;
   const lastReminderAnnouncementRef = useRef<string | null>(null);
   const reminderAnnouncementInFlightRef = useRef(false);
+  const offlineFlowHandledRef = useRef(false);
+  const offlineFlowInFlightRef = useRef(false);
+  const voiceReady = getVoiceModule() !== null;
+
+  const loadReminders = async () => {
+    setIsLoadingReminders(true);
+    setRemindersError('');
+
+    try {
+      const [remindersResult, medicationSchedulesResult] =
+        await Promise.allSettled([
+          apiClient.getReminders(),
+          apiClient.getMedicationSchedules(),
+        ]);
+      const nextReminderItems: ReminderFeedItem[] = [];
+      const errors: string[] = [];
+      const dummyReminderItems = buildDummyReminderFeed(
+        getStartOfDayTimestamp(Date.now()),
+      );
+
+      if (remindersResult.status === 'fulfilled') {
+        console.log('Reminders API response.', {
+          api: apiClient.remindersApiUrl,
+          response: remindersResult.value,
+        });
+
+        const reminderItems = Array.isArray(remindersResult.value.data)
+          ? remindersResult.value.data
+          : [];
+
+        nextReminderItems.push(
+          ...reminderItems.map(reminder => ({
+            ...reminder,
+            kind: 'reminder' as const,
+          })),
+        );
+      } else {
+        console.warn('Reminders API request failed.', {
+          api: apiClient.remindersApiUrl,
+          error: remindersResult.reason,
+        });
+
+        errors.push(getErrorMessage(remindersResult.reason));
+      }
+
+      if (medicationSchedulesResult.status === 'fulfilled') {
+        console.log('Medication schedules API response.', {
+          api: apiClient.medicationSchedulesApiUrl,
+          response: medicationSchedulesResult.value,
+        });
+
+        const medicationItems = Array.isArray(medicationSchedulesResult.value)
+          ? medicationSchedulesResult.value
+          : [];
+
+        nextReminderItems.push(
+          ...medicationItems
+            .filter(schedule => schedule.isActive)
+            .map((schedule: MedicationSchedule) => ({
+              id: `medication-${schedule.id}`,
+              kind: 'medication' as const,
+              label: schedule.medicineName,
+              scheduledFor: schedule.scheduledFor,
+              status: 'pending' as const,
+            })),
+        );
+      } else {
+        console.warn('Medication schedules API request failed.', {
+          api: apiClient.medicationSchedulesApiUrl,
+          error: medicationSchedulesResult.reason,
+        });
+
+        errors.push(getErrorMessage(medicationSchedulesResult.reason));
+      }
+
+      if (nextReminderItems.length === 0) {
+        setReminders(dummyReminderItems);
+        setRemindersError('');
+        console.warn('Reminder feed empty. Using dummy data.', {
+          reminderApi: apiClient.remindersApiUrl,
+          medicationApi: apiClient.medicationSchedulesApiUrl,
+          fallbackCount: dummyReminderItems.length,
+          errors,
+        });
+      } else {
+        setReminders(nextReminderItems);
+      }
+
+      if (nextReminderItems.length > 0 && errors.length > 0) {
+        console.warn('Reminder feed partially loaded.', {
+          reminderApi: apiClient.remindersApiUrl,
+          medicationApi: apiClient.medicationSchedulesApiUrl,
+          errors,
+        });
+      }
+    } catch (error) {
+      const dummyReminderItems = buildDummyReminderFeed(
+        getStartOfDayTimestamp(Date.now()),
+      );
+
+      setReminders(dummyReminderItems);
+      setRemindersError('');
+      console.warn('Reminder feed request crashed. Using dummy data.', {
+        reminderApi: apiClient.remindersApiUrl,
+        medicationApi: apiClient.medicationSchedulesApiUrl,
+        error,
+        fallbackCount: dummyReminderItems.length,
+      });
+    } finally {
+      setIsLoadingReminders(false);
+    }
+  };
+
+  const clearBuddiRestartTimeout = () => {
+    if (buddiRestartTimeoutRef.current) {
+      clearTimeout(buddiRestartTimeoutRef.current);
+      buddiRestartTimeoutRef.current = null;
+    }
+  };
+
+  const clearBuddiVoiceActivityTimeout = () => {
+    if (buddiVoiceActivityTimeoutRef.current) {
+      clearTimeout(buddiVoiceActivityTimeoutRef.current);
+      buddiVoiceActivityTimeoutRef.current = null;
+    }
+  };
+
+  const stopBuddiVoicePulse = () => {
+    clearBuddiVoiceActivityTimeout();
+    setIsBuddiVoiceDetected(false);
+  };
+
+  const markBuddiVoiceActivity = () => {
+    if (activeVoiceSurfaceRef.current === 'sos') {
+      return;
+    }
+
+    clearBuddiVoiceActivityTimeout();
+    setIsBuddiVoiceDetected(true);
+    buddiVoiceActivityTimeoutRef.current = setTimeout(() => {
+      buddiVoiceActivityTimeoutRef.current = null;
+      setIsBuddiVoiceDetected(false);
+    }, 700);
+  };
+
+  useEffect(() => {
+    activeVoiceSurfaceRef.current = activeVoiceSurface;
+  }, [activeVoiceSurface]);
+
+  useEffect(() => {
+    isListeningRef.current = isListening;
+  }, [isListening]);
 
   useEffect(() => {
     const voice = getVoiceModule();
@@ -504,24 +816,38 @@ export function PatientHomeScreen({
     voice.onSpeechEnd = () => {
       setIsListening(false);
       audioService.stopRecording();
+      stopBuddiVoicePulse();
     };
     voice.onSpeechResults = event => {
       const nextTranscript = event.value?.join(' ').trim() ?? '';
       if (nextTranscript) {
+        markBuddiVoiceActivity();
         setTranscript(nextTranscript);
       }
     };
     voice.onSpeechPartialResults = event => {
-      setPartialTranscript(event.value?.join(' ').trim() ?? '');
+      const nextPartialTranscript = event.value?.join(' ').trim() ?? '';
+      if (nextPartialTranscript) {
+        markBuddiVoiceActivity();
+      }
+      setPartialTranscript(nextPartialTranscript);
+    };
+    voice.onSpeechVolumeChanged = event => {
+      if ((event.value ?? 0) > buddiVoicePulseThreshold) {
+        markBuddiVoiceActivity();
+      }
     };
     voice.onSpeechError = event => {
       const nextError = getSpeechErrorMessage(event);
       setIsListening(false);
       setSosError(nextError ?? '');
       audioService.stopRecording();
+      stopBuddiVoicePulse();
     };
 
     return () => {
+      clearBuddiRestartTimeout();
+      clearBuddiVoiceActivityTimeout();
       audioService.stopRecording();
       speechService.stop().catch(() => undefined);
       voice
@@ -531,6 +857,10 @@ export function PatientHomeScreen({
           voice.removeAllListeners();
         });
     };
+  }, []);
+
+  useEffect(() => {
+    loadReminders().catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -544,11 +874,74 @@ export function PatientHomeScreen({
   }, []);
 
   useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener(state => {
+      const nextOffline =
+        state.isConnected === false || state.isInternetReachable === false;
+
+      setIsOffline(nextOffline);
+
+      if (!nextOffline) {
+        offlineFlowHandledRef.current = false;
+        setOfflineCaregiverStatus('');
+        return;
+      }
+
+      if (offlineFlowHandledRef.current) {
+        return;
+      }
+
+      offlineFlowHandledRef.current = true;
+      triggerOfflineCareFlow().catch(error => {
+        console.warn('Offline caregiver flow failed.', {error});
+      });
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
     return () => {
       Vibration.cancel();
       audioService.releaseAlarm().catch(() => undefined);
+      clearBuddiRestartTimeout();
+      clearBuddiVoiceActivityTimeout();
     };
   }, []);
+
+  useEffect(() => {
+    const shouldPulse = isBuddiVoiceDetected;
+    if (!shouldPulse) {
+      buddiPulse.stopAnimation();
+      buddiPulse.setValue(0);
+      return;
+    }
+
+    buddiPulse.setValue(0);
+    const pulseLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(buddiPulse, {
+          toValue: 1,
+          duration: 1100,
+          useNativeDriver: true,
+        }),
+        Animated.timing(buddiPulse, {
+          toValue: 0,
+          duration: 0,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+
+    pulseLoop.start();
+
+    return () => {
+      pulseLoop.stop();
+      buddiPulse.stopAnimation();
+      buddiPulse.setValue(0);
+    };
+  }, [buddiPulse, isBuddiVoiceDetected]);
 
   useEffect(() => {
     if (activeVoiceSurface !== 'sos') {
@@ -569,6 +962,11 @@ export function PatientHomeScreen({
   }, [activeVoiceSurface]);
 
   const prepareVoiceSurface = (surface: VoiceSurface) => {
+    clearBuddiRestartTimeout();
+    if (surface === 'sos') {
+      stopBuddiVoicePulse();
+    }
+    activeVoiceSurfaceRef.current = surface;
     setActiveVoiceSurface(surface);
     setTranscript('');
     setPartialTranscript('');
@@ -576,6 +974,7 @@ export function PatientHomeScreen({
   };
 
   const beginListening = async () => {
+    clearBuddiRestartTimeout();
     const voice = getVoiceModule();
 
     await speechService.stop();
@@ -601,12 +1000,27 @@ export function PatientHomeScreen({
         return;
       }
 
+      const listeningOptions =
+        activeVoiceSurfaceRef.current === 'sos'
+          ? {
+              EXTRA_PARTIAL_RESULTS: true,
+              REQUEST_PERMISSIONS_AUTO: false,
+            }
+          : {
+              EXTRA_LANGUAGE_MODEL: 'LANGUAGE_MODEL_FREE_FORM',
+              EXTRA_PARTIAL_RESULTS: true,
+              EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS:
+                buddiSpeechMinimumLengthMs,
+              EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS:
+                buddiSpeechCompleteSilenceMs,
+              EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS:
+                buddiSpeechPossibleSilenceMs,
+              REQUEST_PERMISSIONS_AUTO: false,
+            };
+
       setIsListening(true);
       audioService.startRecording();
-      await voice.start('en-US', {
-        EXTRA_PARTIAL_RESULTS: true,
-        REQUEST_PERMISSIONS_AUTO: false,
-      });
+      await voice.start('en-US', listeningOptions);
     } catch (error) {
       setIsListening(false);
       audioService.stopRecording();
@@ -624,6 +1038,10 @@ export function PatientHomeScreen({
 
     prepareVoiceSurface(surface);
 
+    if (surface === 'sos' && isListeningRef.current) {
+      await stopListening();
+    }
+
     try {
       await speechService.speak(surface === 'sos' ? sosPrompt : budiiPrompt);
     } catch {
@@ -638,6 +1056,7 @@ export function PatientHomeScreen({
   };
 
   const stopListening = async () => {
+    clearBuddiRestartTimeout();
     const voice = getVoiceModule();
     if (!voice) {
       setIsListening(false);
@@ -662,6 +1081,8 @@ export function PatientHomeScreen({
   const closeVoiceSurface = async () => {
     const voice = getVoiceModule();
     sosRequestIdRef.current += 1;
+    clearBuddiRestartTimeout();
+    activeVoiceSurfaceRef.current = null;
 
     await speechService.stop();
 
@@ -674,6 +1095,7 @@ export function PatientHomeScreen({
     }
 
     setIsListening(false);
+    stopBuddiVoicePulse();
     setPartialTranscript('');
     audioService.stopRecording();
     setIsSubmittingSos(false);
@@ -681,14 +1103,56 @@ export function PatientHomeScreen({
     setActiveVoiceSurface(null);
   };
 
+  const triggerOfflineCareFlow = async () => {
+    if (offlineFlowInFlightRef.current) {
+      return;
+    }
+
+    offlineFlowInFlightRef.current = true;
+    prepareVoiceSurface('buddi');
+    setOfflineCaregiverStatus('Calling Annie now...');
+    stopBuddiVoicePulse();
+
+    try {
+      if (isListeningRef.current) {
+        await stopListening();
+      } else {
+        await speechService.stop();
+        audioService.stopRecording();
+      }
+
+      setTranscript('');
+      setPartialTranscript('');
+      setSosError('');
+
+      try {
+        await speechService.speak(offlineCaregiverMessage);
+      } catch {
+        // Fall back to direct call even if TTS is unavailable.
+      }
+
+      await caregiverCallService.callCaregiver();
+    } finally {
+      offlineFlowInFlightRef.current = false;
+    }
+  };
+
   const displayedTranscript = partialTranscript || transcript;
-  const voiceReady = getVoiceModule() !== null;
+  const buddiListeningActive = activeVoiceSurface !== 'sos' && isListening;
+  const buddiPulseActive = isBuddiVoiceDetected;
+  const buddiPulseScale = buddiPulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 1.45],
+  });
+  const buddiPulseOpacity = buddiPulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.3, 0],
+  });
   const sosSuggestions = [
     'I need help right now.',
     'Please alert my caregiver.',
     'I feel dizzy and need assistance.',
   ] as const;
-  const reminders = dummyReminders;
 
   const applySuggestion = (suggestion: string) => {
     setTranscript(suggestion);
@@ -753,40 +1217,94 @@ export function PatientHomeScreen({
     speechService.stop().catch(() => undefined);
     audioService.stopAlarm().catch(() => undefined);
   };
-
-  const reminderCards = sortedReminders.map(reminder => {
-    const isCardAlerting = activeAlertReminder?.id === reminder.id;
-
-    return {
-      id: reminder.id,
-      badge: getReminderBadge(reminder.label),
-      title: reminder.label,
-      time: formatReminderTime(reminder.scheduledFor),
-      description: isCardAlerting
-        ? 'Alarm audio, blinking, and voice announcement are active for this reminder.'
-        : getReminderDescription(reminder),
-      alertMessage: isCardAlerting
-        ? getReminderAlertMeta(reminder, currentTime) ?? undefined
-        : undefined,
-      badgeBackgroundColor:
-        reminder.status === 'completed'
-          ? themeGreenSoft
-          : isCardAlerting
-          ? themeRedSoft
-          : themeBlueSoft,
-      badgeTextColor:
-        reminder.status === 'completed'
-          ? '#3C7E18'
-          : isCardAlerting
-          ? themeRed
-          : themeBlue,
-      completed: reminder.status === 'completed',
-      alerting: isCardAlerting,
-      onPress: isCardAlerting
-        ? () => silenceReminderAlert(reminder.id)
-        : undefined,
-    };
+  const isSelectedReminderToday = isSameLocalDay(
+    selectedReminderDay,
+    currentTime,
+  );
+  const remindersForSelectedDay = sortedReminders.filter(reminder => {
+    const scheduledTime = getReminderTimestamp(reminder.scheduledFor);
+    return (
+      scheduledTime !== null && isSameLocalDay(scheduledTime, selectedReminderDay)
+    );
   });
+  const completedReminderCount = remindersForSelectedDay.filter(
+    reminder => getReminderTimelineState(reminder, currentTime) === 'completed',
+  ).length;
+  const missedReminderCount = remindersForSelectedDay.filter(
+    reminder => getReminderTimelineState(reminder, currentTime) === 'missed',
+  ).length;
+  const reminderHoursInView = remindersForSelectedDay
+    .map(reminder => {
+      const scheduledAt = new Date(reminder.scheduledFor);
+      return Number.isNaN(scheduledAt.getTime()) ? null : scheduledAt.getHours();
+    })
+    .filter((hour): hour is number => hour !== null);
+  const selectedDayCurrentHour = new Date(currentTime).getHours();
+  const reminderTimelineStartHour =
+    reminderHoursInView.length > 0
+      ? Math.min(
+          reminderTimelineMinimumHour,
+          ...reminderHoursInView,
+          isSelectedReminderToday
+            ? selectedDayCurrentHour
+            : reminderTimelineMinimumHour,
+        )
+      : reminderTimelineMinimumHour;
+  const reminderTimelineEndHour =
+    reminderHoursInView.length > 0
+      ? Math.max(
+          reminderTimelineMaximumHour,
+          ...reminderHoursInView,
+          isSelectedReminderToday
+            ? selectedDayCurrentHour + 1
+            : reminderTimelineMaximumHour,
+        )
+      : reminderTimelineMaximumHour;
+  const reminderTimelineRows = Array.from(
+    {length: reminderTimelineEndHour - reminderTimelineStartHour + 1},
+    (_, index) => {
+      const hour = reminderTimelineStartHour + index;
+      const items = remindersForSelectedDay.filter(reminder => {
+        const scheduledAt = new Date(reminder.scheduledFor);
+        return (
+          !Number.isNaN(scheduledAt.getTime()) && scheduledAt.getHours() === hour
+        );
+      });
+
+      return {
+        hour,
+        items,
+        height:
+          reminderTimelineBaseRowHeight +
+          Math.max(0, items.length - 1) * reminderTimelineExtraCardHeight,
+      };
+    },
+  );
+  let reminderCurrentTimeLineTop: number | null = null;
+
+  if (isSelectedReminderToday) {
+    const now = new Date(currentTime);
+    const nowHour = now.getHours();
+
+    if (
+      nowHour >= reminderTimelineStartHour &&
+      nowHour <= reminderTimelineEndHour
+    ) {
+      let accumulatedHeight = 0;
+
+      for (const row of reminderTimelineRows) {
+        if (row.hour === nowHour) {
+          const hourProgress =
+            (now.getMinutes() * 60 + now.getSeconds()) / (60 * 60);
+          reminderCurrentTimeLineTop =
+            accumulatedHeight + hourProgress * row.height;
+          break;
+        }
+
+        accumulatedHeight += row.height;
+      }
+    }
+  }
 
   useEffect(() => {
     if (!activeAlertReminder) {
@@ -882,17 +1400,29 @@ export function PatientHomeScreen({
 
   const fixedReminderLabel = activeAlertReminder
     ? 'Reminder alarm active'
+    : isLoadingReminders
+    ? 'Loading reminders'
+    : remindersError
+    ? 'Reminders unavailable'
     : 'Upcoming reminder';
   const fixedReminderMeta = highlightedReminder
     ? activeAlertReminder
       ? getReminderAlertMeta(highlightedReminder, currentTime) ??
         formatReminderTime(highlightedReminder.scheduledFor)
       : formatReminderTime(highlightedReminder.scheduledFor)
+    : isLoadingReminders
+    ? 'Fetching your reminder list'
+    : remindersError
+    ? remindersError
     : 'Check back later';
   const handleFixedReminderPress = () => {
     if (activeAlertReminder) {
       silenceReminderAlert(activeAlertReminder.id);
       return;
+    }
+
+    if (remindersError) {
+      loadReminders().catch(() => undefined);
     }
 
     setActiveTab('reminders');
@@ -901,13 +1431,33 @@ export function PatientHomeScreen({
   const openSosPrompt = () => {
     startVoiceFlow('sos').catch(() => undefined);
   };
+  const handleCaregiverCall = async () => {
+    await caregiverCallService.callCaregiver();
+  };
   const openBudiiModal = () => {
-    startVoiceFlow('buddi').catch(() => undefined);
+    if (isOffline) {
+      setOfflineCaregiverStatus('Calling Annie now...');
+      prepareVoiceSurface('buddi');
+      return;
+    }
+
+    setOfflineCaregiverStatus('');
+    prepareVoiceSurface('buddi');
+    if (!isListeningRef.current) {
+      beginListening().catch(() => undefined);
+    }
   };
   const closeVoiceSurfaceSafely = () => {
     closeVoiceSurface().catch(() => undefined);
   };
   const handleMicPress = () => {
+    if (activeVoiceSurface === 'buddi') {
+      if (!isListening) {
+        beginListening().catch(() => undefined);
+      }
+      return;
+    }
+
     if (isListening) {
       stopListening().catch(() => undefined);
       return;
@@ -949,89 +1499,160 @@ export function PatientHomeScreen({
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <BrandHeader onSignOut={onSignOut} />
+      {activeTab === 'home' ? <BrandHeader onSignOut={onSignOut} /> : null}
 
       <View style={styles.screenBody}>
-        <View pointerEvents="box-none" style={styles.fixedSosContainer}>
-          <Pressable
-            accessibilityLabel={
-              activeAlertReminder ? 'Silence reminder alarm' : 'Open reminders'
-            }
-            accessibilityRole="button"
-            onPress={handleFixedReminderPress}
-            style={({pressed}) => [
-              styles.fixedReminderButton,
-              activeAlertReminder ? styles.fixedReminderButtonAlerting : null,
-              pressed ? styles.pressed : null,
-            ]}>
-            <Animated.View
-              pointerEvents="none"
-              style={[
-                styles.fixedReminderButtonFadeOverlay,
-                activeAlertReminder
-                  ? styles.fixedReminderButtonFadeOverlayAlerting
-                  : null,
-                {opacity: reminderFade},
-              ]}
-            />
-            <View
-              style={[
-                styles.fixedReminderButtonIcon,
-                activeAlertReminder
-                  ? styles.fixedReminderButtonIconAlerting
-                  : null,
-              ]}>
-              <FeatherIcons
-                color={activeAlertReminder ? themeRed : themeBlue}
-                name="bell"
-                size={18}
-              />
-            </View>
-            <View style={styles.fixedReminderButtonCopy}>
-              <Text
-                style={[
-                  styles.fixedReminderButtonLabel,
+        <View
+          pointerEvents="box-none"
+          style={[
+            styles.fixedSosContainer,
+            activeTab === 'reminders'
+              ? styles.fixedReminderScheduleContainer
+              : null,
+          ]}>
+          {activeTab === 'home' ? (
+            <>
+              <Pressable
+                accessibilityLabel={
                   activeAlertReminder
-                    ? styles.fixedReminderButtonLabelAlerting
-                    : null,
-                ]}>
-                {fixedReminderLabel}
-              </Text>
-              <Text numberOfLines={2} style={styles.fixedReminderButtonTitle}>
-                {highlightedReminder?.label ?? 'No upcoming reminders'}
-              </Text>
-              <Text
-                numberOfLines={1}
-                style={[
-                  styles.fixedReminderButtonMeta,
+                    ? 'Silence reminder alarm'
+                    : 'Open reminders'
+                }
+                accessibilityRole="button"
+                onPress={handleFixedReminderPress}
+                style={({pressed}) => [
+                  styles.fixedReminderButton,
                   activeAlertReminder
-                    ? styles.fixedReminderButtonMetaAlerting
+                    ? styles.fixedReminderButtonAlerting
                     : null,
+                  pressed ? styles.pressed : null,
                 ]}>
-                {fixedReminderMeta}
-              </Text>
-            </View>
-            <FeatherIcons color="#7A95AA" name="chevron-right" size={18} />
-          </Pressable>
+                <Animated.View
+                  pointerEvents="none"
+                  style={[
+                    styles.fixedReminderButtonFadeOverlay,
+                    activeAlertReminder
+                      ? styles.fixedReminderButtonFadeOverlayAlerting
+                      : null,
+                    {opacity: reminderFade},
+                  ]}
+                />
+                <View
+                  style={[
+                    styles.fixedReminderButtonIcon,
+                    activeAlertReminder
+                      ? styles.fixedReminderButtonIconAlerting
+                      : null,
+                  ]}>
+                  <FeatherIcons
+                    color={activeAlertReminder ? themeRed : themeBlue}
+                    name="bell"
+                    size={18}
+                  />
+                </View>
+                <View style={styles.fixedReminderButtonCopy}>
+                  <Text
+                    style={[
+                      styles.fixedReminderButtonLabel,
+                      activeAlertReminder
+                        ? styles.fixedReminderButtonLabelAlerting
+                        : null,
+                    ]}>
+                    {fixedReminderLabel}
+                  </Text>
+                  <Text numberOfLines={2} style={styles.fixedReminderButtonTitle}>
+                    {highlightedReminder?.label ?? 'No upcoming reminders'}
+                  </Text>
+                  <Text
+                    numberOfLines={1}
+                    style={[
+                      styles.fixedReminderButtonMeta,
+                      activeAlertReminder
+                        ? styles.fixedReminderButtonMetaAlerting
+                        : null,
+                    ]}>
+                    {fixedReminderMeta}
+                  </Text>
+                </View>
+                <FeatherIcons color="#7A95AA" name="chevron-right" size={18} />
+              </Pressable>
 
-          <Pressable
-            accessibilityLabel="Open SOS voice prompt"
-            accessibilityRole="button"
-            onPress={openSosPrompt}
-            style={({pressed}) => [
-              styles.topSosButton,
-              pressed ? styles.pressed : null,
-            ]}>
-            <Text style={styles.topSosButtonText}>SOS</Text>
-          </Pressable>
-          {activeTab === 'reminders' ? (
-            <View pointerEvents="none" style={styles.fixedReminderHeader}>
-              <Text style={styles.sectionTitle}>Reminders</Text>
-              <Text style={styles.sectionSubtitle}>
-                Upcoming care tasks and completed check-ins.
-              </Text>
+              <Pressable
+                accessibilityLabel="Open SOS voice prompt"
+                accessibilityRole="button"
+                onPress={openSosPrompt}
+                style={({pressed}) => [
+                  styles.topSosButton,
+                  pressed ? styles.pressed : null,
+                ]}>
+                <Text style={styles.topSosButtonText}>SOS</Text>
+              </Pressable>
+            </>
+          ) : (
+            <View style={styles.reminderScheduleHeader}>
+              <View style={styles.reminderScheduleDateRow}>
+                <Pressable
+                  accessibilityLabel="Show previous day reminders"
+                  accessibilityRole="button"
+                  onPress={() => {
+                    setSelectedReminderDay(previousDay =>
+                      addDaysToTimestamp(previousDay, -1),
+                    );
+                  }}
+                  style={({pressed}) => [
+                    styles.reminderScheduleNavButton,
+                    pressed ? styles.pressed : null,
+                  ]}>
+                  <FeatherIcons color="#17375A" name="chevron-left" size={24} />
+                </Pressable>
+
+                <View style={styles.reminderScheduleDateCopy}>
+                  <Text style={styles.reminderScheduleDateTitle}>
+                    {formatReminderDayHeading(selectedReminderDay)}
+                  </Text>
+                  <Text style={styles.reminderScheduleDateMeta}>
+                    {formatReminderDayMeta(selectedReminderDay, currentTime)}
+                  </Text>
+                </View>
+
+                <Pressable
+                  accessibilityLabel="Show next day reminders"
+                  accessibilityRole="button"
+                  onPress={() => {
+                    setSelectedReminderDay(previousDay =>
+                      addDaysToTimestamp(previousDay, 1),
+                    );
+                  }}
+                  style={({pressed}) => [
+                    styles.reminderScheduleNavButton,
+                    pressed ? styles.pressed : null,
+                  ]}>
+                  <FeatherIcons color="#17375A" name="chevron-right" size={24} />
+                </Pressable>
+              </View>
+
+              <View style={styles.reminderSummaryRow}>
+                <ReminderStatCard
+                  accentColor="#17375A"
+                  borderColor="#E6EDF4"
+                  label="Total"
+                  value={remindersForSelectedDay.length}
+                />
+                <ReminderStatCard
+                  accentColor={reminderScheduleMint}
+                  borderColor="#D8F4EF"
+                  label="Done"
+                  value={completedReminderCount}
+                />
+                <ReminderStatCard
+                  accentColor={reminderScheduleRose}
+                  borderColor="#F7D8DC"
+                  label="Missed"
+                  value={missedReminderCount}
+                />
+              </View>
             </View>
-          ) : null}
+          )}
         </View>
 
         <ScrollView
@@ -1056,11 +1677,25 @@ export function PatientHomeScreen({
                   pressed ? styles.pressed : null,
                 ]}>
                 <View style={styles.buddiActionContent}>
-                  <Image
-                    resizeMode="contain"
-                    source={buddiBotIcon}
-                    style={styles.buddiActionIcon}
-                  />
+                  <View style={styles.buddiActionIconWrap}>
+                    {buddiPulseActive ? (
+                      <Animated.View
+                        pointerEvents="none"
+                        style={[
+                          styles.buddiActionIconPulse,
+                          {
+                            opacity: buddiPulseOpacity,
+                            transform: [{scale: buddiPulseScale}],
+                          },
+                        ]}
+                      />
+                    ) : null}
+                    <Image
+                      resizeMode="contain"
+                      source={buddiBotIcon}
+                      style={styles.buddiActionIcon}
+                    />
+                  </View>
                   <Text style={styles.buddiActionTitle}>Talk to Buddi</Text>
                 </View>
               </Pressable>
@@ -1073,39 +1708,217 @@ export function PatientHomeScreen({
                 <Text style={styles.assuranceBody}>
                   Your caregiver near you.
                 </Text>
-                <Pressable
-                  accessibilityLabel="Chat with Annie"
-                  accessibilityRole="button"
-                  onPress={onOpenCaregiverChat}
-                  style={({pressed}) => [
-                    styles.assuranceActionButton,
-                    pressed ? styles.pressed : null,
-                  ]}>
-                  <FeatherIcons
-                    color="#FFFFFF"
-                    name="message-circle"
-                    size={18}
-                  />
-                  <Text style={styles.assuranceActionText}>
-                    Chat with Annie
-                  </Text>
-                </Pressable>
+                <View style={styles.assuranceActionsRow}>
+                  <Pressable
+                    accessibilityLabel={`Call Annie on ${caregiverPhoneNumber}`}
+                    accessibilityRole="button"
+                    onPress={handleCaregiverCall}
+                    style={({pressed}) => [
+                      styles.assuranceCallButton,
+                      pressed ? styles.pressed : null,
+                    ]}>
+                    <FeatherIcons color="#FFFFFF" name="phone-call" size={18} />
+                  </Pressable>
+                  <Pressable
+                    accessibilityLabel="Chat with Annie"
+                    accessibilityRole="button"
+                    onPress={onOpenCaregiverChat}
+                    style={({pressed}) => [
+                      styles.assuranceActionButton,
+                      pressed ? styles.pressed : null,
+                    ]}>
+                    <FeatherIcons
+                      color="#FFFFFF"
+                      name="message-circle"
+                      size={18}
+                    />
+                    <Text style={styles.assuranceActionText}>
+                      Chat with Annie
+                    </Text>
+                  </Pressable>
+                </View>
               </View>
             </>
           ) : (
             <>
               <View style={styles.remindersList}>
-                {reminderCards.length > 0 ? (
-                  reminderCards.map(item => (
-                    <ReminderCard key={item.id} {...item} />
-                  ))
-                ) : (
+                {isLoadingReminders ? (
                   <View style={styles.remindersEmptyState}>
+                    <ActivityIndicator color={themeBlue} size="small" />
                     <Text style={styles.remindersEmptyTitle}>
-                      No reminders yet
+                      Loading reminders
                     </Text>
                     <Text style={styles.remindersEmptyBody}>
-                      Add reminders to your care plan and they will appear here.
+                      Fetching your care plan from the server.
+                    </Text>
+                  </View>
+                ) : remindersError ? (
+                  <View style={styles.remindersEmptyState}>
+                    <Text style={styles.remindersEmptyTitle}>
+                      Unable to load reminders
+                    </Text>
+                    <Text style={styles.remindersEmptyBody}>
+                      {remindersError}
+                    </Text>
+                    <Pressable
+                      accessibilityLabel="Retry reminders loading"
+                      accessibilityRole="button"
+                      onPress={() => {
+                        loadReminders().catch(() => undefined);
+                      }}
+                      style={({pressed}) => [
+                        styles.assuranceActionButton,
+                        pressed ? styles.pressed : null,
+                      ]}>
+                      <FeatherIcons
+                        color="#FFFFFF"
+                        name="refresh-cw"
+                        size={18}
+                      />
+                      <Text style={styles.assuranceActionText}>Try again</Text>
+                    </Pressable>
+                  </View>
+                ) : remindersForSelectedDay.length > 0 ? (
+                  <View style={styles.reminderTimelineShell}>
+                    <View style={styles.reminderTimelineGrid}>
+                      {reminderCurrentTimeLineTop !== null ? (
+                        <View
+                          pointerEvents="none"
+                          style={[
+                            styles.reminderTimelineNowMarker,
+                            {top: reminderCurrentTimeLineTop},
+                          ]}>
+                          <View style={styles.reminderTimelineNowDot} />
+                          <View style={styles.reminderTimelineNowLine} />
+                        </View>
+                      ) : null}
+
+                      {reminderTimelineRows.map(row => (
+                        <View
+                          key={`timeline-hour-${row.hour}`}
+                          style={[
+                            styles.reminderTimelineRow,
+                            {minHeight: row.height},
+                          ]}>
+                          <View style={styles.reminderTimelineHourCell}>
+                            <Text style={styles.reminderTimelineHourText}>
+                              {formatTimelineHour(row.hour)}
+                            </Text>
+                          </View>
+
+                          <View style={styles.reminderTimelineEventsCell}>
+                            {row.items.map(reminder => {
+                              const timelineState = getReminderTimelineState(
+                                reminder,
+                                currentTime,
+                              );
+                              const palette = getReminderTimelinePalette(
+                                reminder,
+                                timelineState,
+                              );
+                              const alertMeta =
+                                timelineState === 'alerting'
+                                  ? getReminderAlertMeta(reminder, currentTime)
+                                  : null;
+                              const isAlertingCard =
+                                timelineState === 'alerting';
+
+                              return (
+                                <Pressable
+                                  key={reminder.id}
+                                  accessibilityRole={
+                                    isAlertingCard ? 'button' : undefined
+                                  }
+                                  disabled={!isAlertingCard}
+                                  onPress={() => {
+                                    silenceReminderAlert(reminder.id);
+                                  }}
+                                  style={({pressed}) => [
+                                    styles.reminderTimelineCard,
+                                    {
+                                      backgroundColor:
+                                        palette.cardBackgroundColor,
+                                      borderColor: palette.borderColor,
+                                    },
+                                    isAlertingCard && pressed
+                                      ? styles.pressed
+                                      : null,
+                                  ]}>
+                                  <View
+                                    style={[
+                                      styles.reminderTimelineCardAccent,
+                                      {backgroundColor: palette.accentColor},
+                                    ]}
+                                  />
+
+                                  <View
+                                    style={[
+                                      styles.reminderTimelineCardIconWrap,
+                                      {
+                                        backgroundColor:
+                                          palette.iconBackgroundColor,
+                                      },
+                                    ]}>
+                                    <FeatherIcons
+                                      color={palette.iconColor}
+                                      name={getReminderTimelineIconName(reminder)}
+                                      size={20}
+                                    />
+                                  </View>
+
+                                  <View style={styles.reminderTimelineCardCopy}>
+                                    <Text
+                                      numberOfLines={1}
+                                      style={[
+                                        styles.reminderTimelineCardTitle,
+                                        {color: palette.titleColor},
+                                      ]}>
+                                      {reminder.label}
+                                    </Text>
+                                    <Text
+                                      style={[
+                                        styles.reminderTimelineCardTime,
+                                        {color: palette.metaColor},
+                                      ]}>
+                                      {formatReminderClockTime(
+                                        reminder.scheduledFor,
+                                      )}
+                                    </Text>
+                                    {alertMeta ? (
+                                      <Text
+                                        numberOfLines={1}
+                                        style={[
+                                          styles.reminderTimelineCardAlert,
+                                          {color: palette.statusColor},
+                                        ]}>
+                                        {alertMeta}
+                                      </Text>
+                                    ) : null}
+                                  </View>
+
+                                  <Text
+                                    style={[
+                                      styles.reminderTimelineCardStatus,
+                                      {color: palette.statusColor},
+                                    ]}>
+                                    {getReminderTimelineStatusLabel(
+                                      timelineState,
+                                    )}
+                                  </Text>
+                                </Pressable>
+                              );
+                            })}
+                          </View>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                ) : (
+                  <View style={styles.remindersEmptyState}>
+                    <Text style={styles.remindersEmptyTitle}>No tasks yet</Text>
+                    <Text style={styles.remindersEmptyBody}>
+                      No reminders or medication schedules are planned for this
+                      day.
                     </Text>
                   </View>
                 )}
@@ -1234,58 +2047,126 @@ export function PatientHomeScreen({
             <View style={styles.buddiModalContentBlock}>
               <View style={styles.buddiModalHeader}>
                 <Text style={styles.buddiModalTitle}>
-                  Hi, how can I help you?
+                  {isOffline ? 'You are offline' : 'Hi, how can I help you?'}
                 </Text>
                 <Text style={styles.buddiModalSubtitle}>
-                  Suggestions on what to ask from AISLA Care
+                  {isOffline
+                    ? 'Buddi could not reach AISLA Care. Annie is being called now.'
+                    : 'Suggestions on what to ask from AISLA Care'}
                 </Text>
               </View>
 
-              <View style={styles.buddiSuggestionList}>
-                {sosSuggestions.map((suggestion, index) => (
-                  <Pressable
-                    key={suggestion}
-                    onPress={() => applySuggestion(suggestion)}
-                    style={({pressed}) => [
-                      styles.buddiSuggestionCard,
-                      index === 0 ? styles.buddiSuggestionCardCompact : null,
-                      pressed ? styles.pressed : null,
-                    ]}>
-                    <Text style={styles.buddiSuggestionCardText}>
-                      {suggestion}
+              {isOffline ? (
+                <View style={styles.buddiOfflineCard}>
+                  <View style={styles.buddiOfflineIconWrap}>
+                    <FeatherIcons
+                      color="#FFFFFF"
+                      name="wifi-off"
+                      size={24}
+                    />
+                  </View>
+                  <View style={styles.buddiOfflineCopy}>
+                    <Text style={styles.buddiOfflineTitle}>
+                      You are offline
                     </Text>
-                  </Pressable>
-                ))}
-              </View>
-
-              {displayedTranscript || sosError ? (
-                <View style={styles.buddiTranscriptCard}>
-                  <Text
-                    style={[
-                      styles.transcriptText,
-                      sosError ? styles.transcriptError : null,
-                    ]}>
-                    {displayedTranscript || sosError}
-                  </Text>
+                    <Text style={styles.buddiOfflineBody}>
+                      {offlineCaregiverMessage}
+                    </Text>
+                    <View style={styles.buddiOfflineCallRow}>
+                      <FeatherIcons
+                        color="#7A1F17"
+                        name="phone-call"
+                        size={16}
+                      />
+                      <Text style={styles.buddiOfflineCallText}>
+                        {offlineCaregiverStatus || 'Calling Annie now...'}
+                      </Text>
+                    </View>
+                    <Text style={styles.buddiOfflinePhoneText}>
+                      Caregiver contact: {caregiverPhoneNumber}
+                    </Text>
+                  </View>
                 </View>
-              ) : null}
+              ) : (
+                <>
+                  <View style={styles.buddiSuggestionList}>
+                    {sosSuggestions.map((suggestion, index) => (
+                      <Pressable
+                        key={suggestion}
+                        onPress={() => applySuggestion(suggestion)}
+                        style={({pressed}) => [
+                          styles.buddiSuggestionCard,
+                          index === 0 ? styles.buddiSuggestionCardCompact : null,
+                          pressed ? styles.pressed : null,
+                        ]}>
+                        <Text style={styles.buddiSuggestionCardText}>
+                          {suggestion}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+
+                  {displayedTranscript || sosError ? (
+                    <View style={styles.buddiTranscriptCard}>
+                      <Text
+                        style={[
+                          styles.transcriptText,
+                          sosError ? styles.transcriptError : null,
+                        ]}>
+                        {displayedTranscript || sosError}
+                      </Text>
+                    </View>
+                  ) : null}
+                </>
+              )}
             </View>
 
             <View style={styles.buddiModalMicDock}>
-              <Text style={styles.buddiModalMicLabel}>
-                {isListening ? 'Listening now...' : 'Tap to start listening'}
-              </Text>
-              <View style={styles.buddiModalMicHalo}>
-                <Pressable
-                  onPress={handleMicPress}
-                  style={({pressed}) => [
-                    styles.modalMicButton,
-                    isListening ? styles.modalMicButtonActive : null,
-                    pressed ? styles.pressed : null,
-                  ]}>
-                  <MicGlyph active={isListening} />
-                </Pressable>
-              </View>
+              {isOffline ? (
+                <>
+                  <View style={styles.buddiOfflineStatusBadge}>
+                    <FeatherIcons color="#7A1F17" name="alert-triangle" size={16} />
+                    <Text style={styles.buddiOfflineStatusBadgeText}>
+                      Emergency offline support active
+                    </Text>
+                  </View>
+                  <Text style={styles.buddiOfflineFooterText}>
+                    Buddi switched to direct caregiver calling because the device
+                    lost internet access.
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.buddiModalMicLabel}>
+                    {buddiListeningActive
+                      ? 'Listening...'
+                      : 'Tap mic to listen'}
+                  </Text>
+                  <View style={styles.buddiModalMicHalo}>
+                    {buddiPulseActive ? (
+                      <Animated.View
+                        pointerEvents="none"
+                        style={[
+                          styles.buddiModalMicPulse,
+                          {
+                            opacity: buddiPulseOpacity,
+                            transform: [{scale: buddiPulseScale}],
+                          },
+                        ]}
+                      />
+                    ) : null}
+                    <Pressable
+                      onPress={handleMicPress}
+                      style={({pressed}) => [
+                        styles.modalMicButton,
+                        isListening ? styles.modalMicButtonActive : null,
+                        pressed ? styles.pressed : null,
+                      ]}>
+                      <MicGlyph active={isListening} />
+                    </Pressable>
+                  </View>
+                </>
+              )}
             </View>
           </Pressable>
         </Pressable>
@@ -1345,7 +2226,7 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   remindersContent: {
-    paddingTop: 490,
+    paddingTop: 272,
     paddingBottom: 120,
   },
   fixedSosContainer: {
@@ -1358,6 +2239,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: 12,
     paddingBottom: 12,
+  },
+  fixedReminderScheduleContainer: {
+    alignItems: 'stretch',
+    paddingBottom: 22,
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
+    shadowColor: '#B7CADB',
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
+    shadowOffset: {width: 0, height: 8},
+    elevation: 4,
   },
   fixedReminderButton: {
     alignSelf: 'stretch',
@@ -1442,6 +2334,78 @@ const styles = StyleSheet.create({
     paddingBottom: 14,
     gap: 4,
   },
+  reminderScheduleHeader: {
+    paddingHorizontal: 24,
+    paddingTop: 10,
+    gap: 18,
+  },
+  reminderScheduleDateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  reminderScheduleNavButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 999,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5EDF5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#D0DBE5',
+    shadowOpacity: 0.16,
+    shadowRadius: 10,
+    shadowOffset: {width: 0, height: 4},
+    elevation: 2,
+  },
+  reminderScheduleDateCopy: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 4,
+  },
+  reminderScheduleDateTitle: {
+    fontFamily: 'Poppins-ExtraBold',
+    fontSize: 19,
+    color: '#17375A',
+    letterSpacing: -0.4,
+    textAlign: 'center',
+  },
+  reminderScheduleDateMeta: {
+    fontFamily: 'Poppins-SemiBold',
+    fontSize: 14,
+    color: themeBlue,
+  },
+  reminderSummaryRow: {
+    flexDirection: 'row',
+    gap: 14,
+  },
+  reminderSummaryCard: {
+    flex: 1,
+    minHeight: 98,
+    borderRadius: 24,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    shadowColor: '#D8E4EE',
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    shadowOffset: {width: 0, height: 6},
+    elevation: 3,
+  },
+  reminderSummaryValue: {
+    fontFamily: 'Poppins-ExtraBold',
+    fontSize: 34,
+    lineHeight: 38,
+    letterSpacing: -0.8,
+  },
+  reminderSummaryLabel: {
+    fontSize: 14,
+    color: '#708293',
+  },
   bottomTabBar: {
     flexDirection: 'row',
     gap: 12,
@@ -1498,11 +2462,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 14,
+    gap: 16,
+  },
+  buddiActionIconWrap: {
+    width: 58,
+    height: 58,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  buddiActionIconPulse: {
+    position: 'absolute',
+    width: 58,
+    height: 58,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.28)',
   },
   buddiActionIcon: {
-    width: 30,
-    height: 30,
+    width: 54,
+    height: 54,
   },
   buddiActionTitle: {
     fontFamily: 'Poppins-Bold',
@@ -1522,7 +2499,7 @@ const styles = StyleSheet.create({
     color: '#6A7E8F',
   },
   remindersList: {
-    gap: 12,
+    gap: 16,
   },
   remindersEmptyState: {
     borderRadius: 22,
@@ -1542,6 +2519,123 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 22,
     color: '#678196',
+  },
+  reminderTimelineShell: {
+    borderRadius: 30,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E8EEF4',
+    shadowColor: '#D3DEE8',
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    shadowOffset: {width: 0, height: 6},
+    elevation: 3,
+    overflow: 'hidden',
+  },
+  reminderTimelineGrid: {
+    position: 'relative',
+    backgroundColor: '#FFFFFF',
+  },
+  reminderTimelineNowMarker: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    pointerEvents: 'none',
+  },
+  reminderTimelineNowDot: {
+    width: 16,
+    height: 16,
+    borderRadius: 999,
+    backgroundColor: reminderScheduleMint,
+    marginLeft: 70,
+  },
+  reminderTimelineNowLine: {
+    flex: 1,
+    height: 4,
+    borderRadius: 999,
+    backgroundColor: reminderScheduleMint,
+  },
+  reminderTimelineRow: {
+    flexDirection: 'row',
+    backgroundColor: '#FFFFFF',
+  },
+  reminderTimelineHourCell: {
+    width: 84,
+    paddingTop: 14,
+    paddingHorizontal: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#EEF3F7',
+    alignItems: 'flex-start',
+  },
+  reminderTimelineHourText: {
+    fontFamily: 'Poppins-SemiBold',
+    fontSize: 15,
+    color: '#707F8F',
+  },
+  reminderTimelineEventsCell: {
+    flex: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderLeftWidth: 1,
+    borderTopWidth: 1,
+    borderLeftColor: '#EEF3F7',
+    borderTopColor: '#EEF3F7',
+    gap: 10,
+    justifyContent: 'center',
+  },
+  reminderTimelineCard: {
+    position: 'relative',
+    minHeight: 72,
+    borderRadius: 24,
+    borderWidth: 1,
+    paddingVertical: 14,
+    paddingLeft: 18,
+    paddingRight: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    overflow: 'hidden',
+  },
+  reminderTimelineCardAccent: {
+    position: 'absolute',
+    top: 10,
+    bottom: 10,
+    left: 0,
+    width: 4,
+    borderTopRightRadius: 999,
+    borderBottomRightRadius: 999,
+  },
+  reminderTimelineCardIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reminderTimelineCardCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  reminderTimelineCardTitle: {
+    fontFamily: 'Poppins-Bold',
+    fontSize: 16,
+    lineHeight: 20,
+  },
+  reminderTimelineCardTime: {
+    fontSize: 13,
+  },
+  reminderTimelineCardAlert: {
+    fontFamily: 'Poppins-SemiBold',
+    fontSize: 12,
+  },
+  reminderTimelineCardStatus: {
+    fontFamily: 'Poppins-Bold',
+    fontSize: 14,
+    textAlign: 'right',
+    maxWidth: 82,
   },
   reminderCard: {
     flexDirection: 'row',
@@ -1668,9 +2762,14 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     color: '#567185',
   },
-  assuranceActionButton: {
-    alignSelf: 'flex-end',
+  assuranceActionsRow: {
     marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 10,
+  },
+  assuranceActionButton: {
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderRadius: 999,
@@ -1683,6 +2782,19 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins-Bold',
     fontSize: 14,
     color: '#FFFFFF',
+  },
+  assuranceCallButton: {
+    width: 46,
+    height: 46,
+    borderRadius: 999,
+    backgroundColor: '#21A365',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#1A7C4D',
+    shadowOpacity: 0.16,
+    shadowRadius: 12,
+    shadowOffset: {width: 0, height: 6},
+    elevation: 4,
   },
   modalBackdrop: {
     flex: 1,
@@ -1870,6 +2982,64 @@ const styles = StyleSheet.create({
     lineHeight: 25,
     color: '#6A7E8F',
   },
+  buddiOfflineCard: {
+    marginTop: 26,
+    borderRadius: 26,
+    backgroundColor: '#FFF1F0',
+    borderWidth: 1,
+    borderColor: '#F2B8B2',
+    padding: 20,
+    flexDirection: 'row',
+    gap: 14,
+    shadowColor: '#B44A40',
+    shadowOpacity: 0.14,
+    shadowRadius: 16,
+    shadowOffset: {width: 0, height: 8},
+    elevation: 4,
+  },
+  buddiOfflineIconWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 18,
+    backgroundColor: themeRed,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  buddiOfflineCopy: {
+    flex: 1,
+    gap: 8,
+  },
+  buddiOfflineTitle: {
+    fontFamily: 'Poppins-ExtraBold',
+    fontSize: 20,
+    lineHeight: 24,
+    color: '#8A251E',
+  },
+  buddiOfflineBody: {
+    fontSize: 15,
+    lineHeight: 23,
+    color: '#8A4A43',
+  },
+  buddiOfflineCallRow: {
+    marginTop: 4,
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 999,
+    backgroundColor: '#FFE3E0',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  buddiOfflineCallText: {
+    fontFamily: 'Poppins-Bold',
+    fontSize: 13,
+    color: '#7A1F17',
+  },
+  buddiOfflinePhoneText: {
+    fontSize: 13,
+    color: '#96524A',
+  },
   sosSubmitButton: {
     marginTop: 16,
     minHeight: 46,
@@ -1935,6 +3105,7 @@ const styles = StyleSheet.create({
     gap: 14,
   },
   buddiModalMicHalo: {
+    position: 'relative',
     width: 78,
     height: 78,
     borderRadius: 999,
@@ -1942,10 +3113,37 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  buddiModalMicPulse: {
+    position: 'absolute',
+    width: 78,
+    height: 78,
+    borderRadius: 999,
+    backgroundColor: 'rgba(217, 62, 50, 0.2)',
+  },
   buddiModalMicLabel: {
     fontFamily: 'Poppins-Bold',
     fontSize: 15,
     color: '#567185',
+  },
+  buddiOfflineStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 999,
+    backgroundColor: '#FFE3E0',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  buddiOfflineStatusBadgeText: {
+    fontFamily: 'Poppins-Bold',
+    fontSize: 13,
+    color: '#7A1F17',
+  },
+  buddiOfflineFooterText: {
+    fontSize: 14,
+    lineHeight: 22,
+    color: '#7F5A55',
+    textAlign: 'center',
   },
   micGlyph: {
     width: 14,

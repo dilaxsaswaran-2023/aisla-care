@@ -8,7 +8,6 @@ import Geolocation, {
 import type {Coordinates, LocationReading} from '../types/models';
 
 class LocationService {
-  private hasRequestedAndroidPermission = false;
   private lastKnownLocation: LocationReading | null = null;
 
   getCachedLocation(): Coordinates | null {
@@ -27,6 +26,7 @@ class LocationService {
     const fineLocation = PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION;
     const coarseLocation =
       PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION;
+    const requestedPermissions = [fineLocation, coarseLocation];
     const hasExistingPermission =
       (await PermissionsAndroid.check(fineLocation)) ||
       (await PermissionsAndroid.check(coarseLocation));
@@ -35,16 +35,9 @@ class LocationService {
       return true;
     }
 
-    if (this.hasRequestedAndroidPermission) {
-      return false;
-    }
-
-    this.hasRequestedAndroidPermission = true;
-
-    const result = await PermissionsAndroid.requestMultiple([
-      fineLocation,
-      coarseLocation,
-    ]);
+    const result = await PermissionsAndroid.requestMultiple(
+      requestedPermissions,
+    );
 
     return (
       result[fineLocation] === PermissionsAndroid.RESULTS.GRANTED ||

@@ -28,6 +28,14 @@ export interface Reminder {
   status: ReminderStatus;
 }
 
+export interface MedicationSchedule {
+  id: string;
+  medicineName: string;
+  scheduledTime: string;
+  scheduledFor: string;
+  isActive: boolean;
+}
+
 export interface Coordinates {
   latitude: number;
   longitude: number;
@@ -54,6 +62,12 @@ export interface RelationshipMember {
   full_name: string;
   email: string;
   role?: UserRole;
+}
+
+export interface CaregiverContact {
+  id: string;
+  name: string;
+  email: string;
 }
 
 export interface PatientRelationshipGroup {

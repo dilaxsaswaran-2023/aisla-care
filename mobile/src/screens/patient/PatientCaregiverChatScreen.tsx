@@ -17,18 +17,17 @@ import FeatherIcons from 'react-native-vector-icons/Feather';
 
 import {apiClient, getErrorMessage} from '../../api/client';
 import {colors} from '../../constants/colors';
-import type {ChatMessage, RelationshipMember} from '../../types/models';
+import type {
+  CaregiverContact,
+  ChatMessage,
+} from '../../types/models';
+import {socketService} from '../../services/socketService';
 
 const aislaLogo = require('../../assets/aisla-logo.png');
 
 type PatientCaregiverChatScreenProps = {
+  caregiver: CaregiverContact;
   onBack: () => void;
-};
-
-type CaregiverContact = {
-  id: string;
-  name: string;
-  email: string;
 };
 
 function getInitials(name: string): string {
@@ -57,82 +56,308 @@ function formatMessageTime(timestamp: string): string {
   });
 }
 
-function extractCaregiver(
-  relationships: Array<{
-    caregiver?: RelationshipMember;
-  }>,
-): CaregiverContact | null {
-  for (const relationship of relationships) {
-    if (relationship.caregiver?._id) {
-      return {
-        id: relationship.caregiver._id,
-        name: relationship.caregiver.full_name || 'Caregiver',
-        email: relationship.caregiver.email || '',
-      };
-    }
+function isChatMessage(value: unknown): value is ChatMessage {
+  if (!value || typeof value !== 'object') {
+    return false;
   }
 
-  return null;
+  const candidate = value as Partial<ChatMessage>;
+  return (
+    typeof candidate.id === 'string' &&
+    typeof candidate.sender_id === 'string' &&
+    typeof candidate.recipient_id === 'string' &&
+    typeof candidate.content === 'string' &&
+    typeof candidate.message_type === 'string' &&
+    typeof candidate.status === 'string' &&
+    typeof candidate.created_at === 'string'
+  );
+}
+
+function isOptimisticMessage(message: ChatMessage): boolean {
+  return message.id.startsWith('local-');
+}
+
+function findOptimisticMatchIndex(
+  messages: ChatMessage[],
+  nextMessage: ChatMessage,
+): number {
+  const nextCreatedAt = new Date(nextMessage.created_at).getTime();
+
+  return messages.findIndex(message => {
+    if (!isOptimisticMessage(message)) {
+      return false;
+    }
+
+    const existingCreatedAt = new Date(message.created_at).getTime();
+    const timestampsAreClose =
+      Number.isNaN(nextCreatedAt) ||
+      Number.isNaN(existingCreatedAt) ||
+      Math.abs(existingCreatedAt - nextCreatedAt) <= 15_000;
+
+    return (
+      message.sender_id === nextMessage.sender_id &&
+      message.recipient_id === nextMessage.recipient_id &&
+      message.content === nextMessage.content &&
+      message.message_type === nextMessage.message_type &&
+      timestampsAreClose
+    );
+  });
+}
+
+function sortMessages(messages: ChatMessage[]): ChatMessage[] {
+  const uniqueMessages = new Map<string, ChatMessage>();
+
+  messages.filter(isChatMessage).forEach(message => {
+    const key = message._id ?? message.id;
+    uniqueMessages.set(key, message);
+  });
+
+  return [...uniqueMessages.values()].sort((left, right) => {
+    const leftTime = new Date(left.created_at).getTime();
+    const rightTime = new Date(right.created_at).getTime();
+
+    if (Number.isNaN(leftTime) || Number.isNaN(rightTime)) {
+      return 0;
+    }
+
+    return leftTime - rightTime;
+  });
+}
+
+function upsertMessage(
+  messages: ChatMessage[],
+  nextMessage: ChatMessage,
+): ChatMessage[] {
+  if (!isChatMessage(nextMessage)) {
+    return sortMessages(messages);
+  }
+
+  const messageIndex = messages.findIndex(
+    message =>
+      message.id === nextMessage.id ||
+      (message._id && nextMessage._id && message._id === nextMessage._id),
+  );
+
+  if (messageIndex !== -1) {
+    return sortMessages(
+      messages.map((message, index) =>
+        index === messageIndex ? nextMessage : message,
+      ),
+    );
+  }
+
+  const optimisticMessageIndex = findOptimisticMatchIndex(messages, nextMessage);
+
+  if (optimisticMessageIndex !== -1) {
+    return sortMessages(
+      messages.map((message, index) =>
+        index === optimisticMessageIndex ? nextMessage : message,
+      ),
+    );
+  }
+
+  return sortMessages([...messages, nextMessage]);
+}
+
+function applyMessageStatus(
+  messages: ChatMessage[],
+  messageIds: string[],
+  status: ChatMessage['status'],
+): ChatMessage[] {
+  if (messageIds.length === 0) {
+    return messages;
+  }
+
+  const messageIdSet = new Set(messageIds);
+  return messages.filter(isChatMessage).map(message =>
+    messageIdSet.has(message.id) ? {...message, status} : message,
+  );
 }
 
 export function PatientCaregiverChatScreen({
+  caregiver,
   onBack,
 }: PatientCaregiverChatScreenProps): React.JSX.Element {
-  const [caregiver, setCaregiver] = useState<CaregiverContact | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
+  const [isCaregiverTyping, setIsCaregiverTyping] = useState(false);
   const [error, setError] = useState('');
   const scrollViewRef = useRef<ScrollView | null>(null);
+  const typingStopTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const session = apiClient.getSession();
   const userId = session?.userId ?? '';
   const quickReplies = useMemo(
     () => ['Please call me', 'I need help with my medicine', 'I am okay'],
     [],
   );
+  const caregiverId = caregiver.id;
+  const caregiverName = caregiver.name;
 
   useEffect(() => {
-    loadChat();
-  }, []);
+    if (!userId) {
+      setError('No active session. Please sign in again.');
+      setIsLoading(false);
+      return;
+    }
+
+    socketService.connect({
+      userId,
+      accessToken: session?.accessToken ?? null,
+    });
+
+    const removeConnectListener = socketService.onConnect(() => {
+      setError('');
+    });
+    const removeDisconnectListener = socketService.onDisconnect(() => {
+      setIsCaregiverTyping(false);
+    });
+    const removeNewMessageListener = socketService.onNewMessage(nextMessage => {
+      if (!isChatMessage(nextMessage)) {
+        if (__DEV__) {
+          console.warn('Socket new_message payload invalid.', nextMessage);
+        }
+        return;
+      }
+
+      if (!belongsToConversation(nextMessage)) {
+        return;
+      }
+
+      setMessages(previousMessages =>
+        upsertMessage(previousMessages, nextMessage),
+      );
+      if (nextMessage.sender_id === caregiverId) {
+        setIsCaregiverTyping(false);
+        markMessagesRead([nextMessage]);
+      }
+    });
+    const removeMessageStatusListener = socketService.onMessageStatus(
+      payload => {
+        if (!payload?.message_id || !payload.status) {
+          return;
+        }
+
+        setMessages(previousMessages =>
+          applyMessageStatus(previousMessages, [payload.message_id], payload.status),
+        );
+      },
+    );
+    const removeMessagesReadListener = socketService.onMessagesRead(payload => {
+      if (
+        !payload ||
+        !Array.isArray(payload.message_ids) ||
+        payload.reader_id !== caregiverId
+      ) {
+        return;
+      }
+
+      setMessages(previousMessages =>
+        applyMessageStatus(previousMessages, payload.message_ids, 'read'),
+      );
+    });
+    const removeTypingListener = socketService.onTypingIndicator(payload => {
+      if (payload?.user_id === caregiverId) {
+        setIsCaregiverTyping(payload.is_typing);
+      }
+    });
+    const removeMessageErrorListener = socketService.onMessageError(payload => {
+      if (payload.error) {
+        Alert.alert('Chat connection error', payload.error);
+      }
+    });
+
+    loadChat().catch(() => undefined);
+
+    return () => {
+      clearTypingStopTimeout();
+      socketService.stopTyping({
+        sender_id: userId,
+        recipient_id: caregiverId ?? '',
+      });
+      removeConnectListener();
+      removeDisconnectListener();
+      removeNewMessageListener();
+      removeMessageStatusListener();
+      removeMessagesReadListener();
+      removeTypingListener();
+      removeMessageErrorListener();
+      socketService.disconnect();
+    };
+  }, [caregiverId, session?.accessToken, userId]);
+
+  const clearTypingStopTimeout = () => {
+    if (typingStopTimeoutRef.current) {
+      clearTimeout(typingStopTimeoutRef.current);
+      typingStopTimeoutRef.current = null;
+    }
+  };
+
+  const belongsToConversation = (message: ChatMessage): boolean => {
+    if (!caregiverId) {
+      return false;
+    }
+
+    const participantIds = [message.sender_id, message.recipient_id];
+    return participantIds.includes(userId) && participantIds.includes(caregiverId);
+  };
+
+  const markMessagesRead = (nextMessages: ChatMessage[]): void => {
+    if (!caregiverId) {
+      return;
+    }
+
+    const unreadMessageIds = nextMessages
+      .filter(
+        message =>
+          message.sender_id === caregiverId &&
+          message.recipient_id === userId &&
+          message.status !== 'read',
+      )
+      .map(message => message.id);
+
+    if (unreadMessageIds.length === 0) {
+      return;
+    }
+
+    setMessages(previousMessages =>
+      applyMessageStatus(previousMessages, unreadMessageIds, 'read'),
+    );
+    socketService.markRead({
+      message_ids: unreadMessageIds,
+      reader_id: userId,
+      sender_id: caregiverId,
+    });
+  };
 
   const loadChat = async () => {
     setIsLoading(true);
     setError('');
 
     try {
-      const relationships = await apiClient.getRelationships();
-      const nextCaregiver = extractCaregiver(relationships);
-
-      setCaregiver(nextCaregiver);
-
-      if (!nextCaregiver) {
-        setMessages([]);
-        return;
-      }
-
-      const conversation = await apiClient.getConversation(nextCaregiver.id);
-      setMessages(conversation);
-
-      const unreadMessages = conversation.filter(
-        message =>
-          message.sender_id === nextCaregiver.id && message.status !== 'read',
+      const conversation = await apiClient.getConversation(caregiverId);
+      const unreadMessages = conversation.filter(message => {
+        return (
+          message.sender_id === caregiverId &&
+          message.recipient_id === userId &&
+          message.status !== 'read'
+        );
+      });
+      const unreadMessageIds = unreadMessages.map(message => message.id);
+      const nextMessages = sortMessages(
+        applyMessageStatus(conversation, unreadMessageIds, 'read'),
       );
 
-      if (unreadMessages.length > 0) {
-        Promise.allSettled(
-          unreadMessages.map(message => apiClient.markMessageRead(message.id)),
-        ).catch(() => undefined);
-
-        setMessages(previousMessages =>
-          previousMessages.map(message =>
-            unreadMessages.some(
-              unreadMessage => unreadMessage.id === message.id,
-            )
-              ? {...message, status: 'read'}
-              : message,
-          ),
-        );
+      setMessages(nextMessages);
+      if (unreadMessageIds.length > 0) {
+        socketService.markRead({
+          message_ids: unreadMessageIds,
+          reader_id: userId,
+          sender_id: caregiverId,
+        });
       }
     } catch (nextError) {
       setError(getErrorMessage(nextError));
@@ -144,14 +369,14 @@ export function PatientCaregiverChatScreen({
   const handleSend = async () => {
     const trimmedMessage = draft.trim();
 
-    if (!trimmedMessage || !caregiver || !userId || isSending) {
+    if (!trimmedMessage || !caregiverId || !userId || isSending) {
       return;
     }
 
     const optimisticMessage: ChatMessage = {
       id: `local-${Date.now()}`,
       sender_id: userId,
-      recipient_id: caregiver.id,
+      recipient_id: caregiverId,
       content: trimmedMessage,
       message_type: 'text',
       status: 'sent',
@@ -159,18 +384,36 @@ export function PatientCaregiverChatScreen({
     };
 
     setDraft('');
+    clearTypingStopTimeout();
+    socketService.stopTyping({
+      sender_id: userId,
+      recipient_id: caregiverId,
+    });
     setIsSending(true);
     setMessages(previousMessages => [...previousMessages, optimisticMessage]);
 
     try {
-      const savedMessage = await apiClient.sendMessage(
-        caregiver.id,
-        trimmedMessage,
-      );
+      const savedMessage = socketService.isConnected()
+        ? await socketService.sendMessage({
+            sender_id: userId,
+            recipient_id: caregiverId,
+            content: trimmedMessage,
+            message_type: 'text',
+          })
+        : await apiClient.sendMessage(caregiverId, trimmedMessage);
+
+      if (!isChatMessage(savedMessage)) {
+        if (__DEV__) {
+          console.warn('Socket send_message ack invalid.', savedMessage);
+        }
+        await loadChat();
+        return;
+      }
 
       setMessages(previousMessages =>
-        previousMessages.map(message =>
-          message.id === optimisticMessage.id ? savedMessage : message,
+        upsertMessage(
+          previousMessages.filter(message => message.id !== optimisticMessage.id),
+          savedMessage,
         ),
       );
     } catch (nextError) {
@@ -185,6 +428,34 @@ export function PatientCaregiverChatScreen({
   };
   const handleRetryPress = () => {
     loadChat().catch(() => undefined);
+  };
+  const handleDraftChange = (value: string) => {
+    setDraft(value);
+
+    if (!userId || !caregiverId) {
+      return;
+    }
+
+    clearTypingStopTimeout();
+    if (!value.trim()) {
+      socketService.stopTyping({
+        sender_id: userId,
+        recipient_id: caregiverId,
+      });
+      return;
+    }
+
+    socketService.startTyping({
+      sender_id: userId,
+      recipient_id: caregiverId,
+    });
+    typingStopTimeoutRef.current = setTimeout(() => {
+      typingStopTimeoutRef.current = null;
+      socketService.stopTyping({
+        sender_id: userId,
+        recipient_id: caregiverId,
+      });
+    }, 1_200);
   };
   const handleSendPress = () => {
     handleSend().catch(() => undefined);
@@ -203,48 +474,62 @@ export function PatientCaregiverChatScreen({
         {!isOutgoing ? (
           <View style={styles.messageAvatar}>
             <Text style={styles.messageAvatarText}>
-              {getInitials(caregiver?.name ?? 'Caregiver')}
+              {getInitials(caregiver.name)}
             </Text>
           </View>
         ) : null}
 
         <View
           style={[
-            styles.messageBubble,
+            styles.messageContent,
             isOutgoing
-              ? styles.messageBubbleOutgoing
-              : styles.messageBubbleIncoming,
+              ? styles.messageContentOutgoing
+              : styles.messageContentIncoming,
           ]}>
-          {message.message_type === 'audio' ? (
-            <View style={styles.audioMessageRow}>
-              <FeatherIcons
-                color={isOutgoing ? '#FFFFFF' : colors.primary}
-                name="mic"
-                size={16}
-              />
+          <View
+            style={[
+              styles.messageBubble,
+              isOutgoing
+                ? styles.messageBubbleOutgoing
+                : styles.messageBubbleIncoming,
+            ]}>
+            {message.message_type === 'audio' ? (
+              <View style={styles.audioMessageRow}>
+                <FeatherIcons
+                  color={isOutgoing ? '#FFFFFF' : colors.primary}
+                  name="mic"
+                  size={16}
+                />
+                <Text
+                  style={[
+                    styles.audioMessageText,
+                    isOutgoing
+                      ? styles.audioMessageTextOutgoing
+                      : styles.audioMessageTextIncoming,
+                  ]}>
+                  Voice message
+                </Text>
+              </View>
+            ) : (
               <Text
                 style={[
-                  styles.audioMessageText,
+                  styles.messageText,
                   isOutgoing
-                    ? styles.audioMessageTextOutgoing
-                    : styles.audioMessageTextIncoming,
+                    ? styles.messageTextOutgoing
+                    : styles.messageTextIncoming,
                 ]}>
-                Voice message
+                {message.content}
               </Text>
-            </View>
-          ) : (
-            <Text
-              style={[
-                styles.messageText,
-                isOutgoing
-                  ? styles.messageTextOutgoing
-                  : styles.messageTextIncoming,
-              ]}>
-              {message.content}
-            </Text>
-          )}
+            )}
+          </View>
 
-          <View style={styles.messageMetaRow}>
+          <View
+            style={[
+              styles.messageMetaRow,
+              isOutgoing
+                ? styles.messageMetaRowOutgoing
+                : styles.messageMetaRowIncoming,
+            ]}>
             <Text
               style={[
                 styles.messageTime,
@@ -255,15 +540,26 @@ export function PatientCaregiverChatScreen({
               {formatMessageTime(message.created_at)}
             </Text>
             {isOutgoing ? (
-              <FeatherIcons
-                color={
-                  message.status === 'read'
-                    ? '#D9F5FF'
-                    : 'rgba(255,255,255,0.72)'
-                }
-                name={message.status === 'read' ? 'check-circle' : 'check'}
-                size={12}
-              />
+              <>
+                <Text
+                  style={[
+                    styles.messageStatusText,
+                    message.status === 'read'
+                      ? styles.messageStatusTextRead
+                      : styles.messageStatusTextPending,
+                  ]}>
+                  {message.status === 'read' ? 'Seen' : 'Sent'}
+                </Text>
+                <FeatherIcons
+                  color={
+                    message.status === 'read'
+                      ? colors.primary
+                      : '#89A9BF'
+                  }
+                  name={message.status === 'read' ? 'check-circle' : 'check'}
+                  size={12}
+                />
+              </>
             ) : null}
           </View>
         </View>
@@ -276,9 +572,9 @@ export function PatientCaregiverChatScreen({
       return (
         <View style={styles.statePanel}>
           <ActivityIndicator color={colors.primary} size="small" />
-          <Text style={styles.stateTitle}>Opening care chat</Text>
+          <Text style={styles.stateTitle}>Loading chat...</Text>
           <Text style={styles.stateBody}>
-            Loading your caregiver connection and recent messages.
+            Loading your caregiver and messages.
           </Text>
         </View>
       );
@@ -304,43 +600,8 @@ export function PatientCaregiverChatScreen({
       );
     }
 
-    if (!caregiver) {
-      return (
-        <View style={styles.statePanel}>
-          <Image
-            resizeMode="contain"
-            source={aislaLogo}
-            style={styles.emptyLogo}
-          />
-          <Text style={styles.stateTitle}>No caregiver connected yet</Text>
-          <Text style={styles.stateBody}>
-            Once a caregiver is assigned, your care chat will appear here.
-          </Text>
-        </View>
-      );
-    }
-
     return (
       <>
-        <View style={styles.heroCard}>
-          <View style={styles.heroAvatar}>
-            <Text style={styles.heroAvatarText}>
-              {getInitials(caregiver.name)}
-            </Text>
-          </View>
-          <View style={styles.heroCopy}>
-            <Text style={styles.heroLabel}>Care giver chat</Text>
-            <Text style={styles.heroTitle}>{caregiver.name}</Text>
-            <Text style={styles.heroBody}>
-              AISLA mobile care chat keeps your caregiver one message away.
-            </Text>
-          </View>
-          <View style={styles.heroStatusPill}>
-            <View style={styles.heroStatusDot} />
-            <Text style={styles.heroStatusText}>Active</Text>
-          </View>
-        </View>
-
         <ScrollView
           ref={scrollViewRef}
           contentContainerStyle={styles.messagesContent}
@@ -349,7 +610,7 @@ export function PatientCaregiverChatScreen({
           }}
           showsVerticalScrollIndicator={false}
           style={styles.messagesScroll}>
-          {messages.length === 0 ? (
+            {messages.length === 0 ? (
             <View style={styles.emptyConversationCard}>
               <Text style={styles.emptyConversationTitle}>Start the chat</Text>
               <Text style={styles.emptyConversationBody}>
@@ -359,7 +620,7 @@ export function PatientCaregiverChatScreen({
             </View>
           ) : null}
 
-          {messages.map(renderMessage)}
+          {messages.filter(isChatMessage).map(renderMessage)}
         </ScrollView>
 
         <View style={styles.quickReplyRow}>
@@ -382,7 +643,7 @@ export function PatientCaregiverChatScreen({
           <View style={styles.composerCard}>
             <TextInput
               multiline
-              onChangeText={setDraft}
+              onChangeText={handleDraftChange}
               placeholder="Type a message to your caregiver"
               placeholderTextColor="#87A0B4"
               style={styles.messageInput}
@@ -428,8 +689,13 @@ export function PatientCaregiverChatScreen({
           </Pressable>
 
           <View style={styles.topBarCopy}>
-            <Text style={styles.topBarEyebrow}>AISLA Mobile</Text>
-            <Text style={styles.topBarTitle}>Care Chat</Text>
+            <Text style={styles.topBarTitle}>{caregiverName}</Text>
+            <View style={styles.topBarStatusRow}>
+              <View style={styles.topBarStatusDot} />
+              <Text style={styles.topBarStatusText}>
+                {isCaregiverTyping ? 'Typing...' : 'Active'}
+              </Text>
+            </View>
           </View>
 
           <View style={styles.logoBadge}>
@@ -460,8 +726,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 18,
+    paddingTop: 12,
+    paddingBottom: 10,
     backgroundColor: '#F5FBFF',
   },
   backButton: {
@@ -479,20 +745,32 @@ const styles = StyleSheet.create({
   },
   topBarCopy: {
     flex: 1,
-    marginHorizontal: 16,
-  },
-  topBarEyebrow: {
-    fontFamily: 'Poppins-Bold',
-    fontSize: 12,
-    color: colors.primary,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
+    marginHorizontal: 12,
   },
   topBarTitle: {
     fontFamily: 'Poppins-ExtraBold',
     fontSize: 24,
     color: '#183A5A',
     letterSpacing: -0.6,
+  },
+  topBarStatusRow: {
+    marginTop: -6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  topBarStatusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: colors.success,
+  },
+  topBarStatusText: {
+    fontFamily: 'Poppins-Bold',
+    fontSize: 10,
+    color: '#339859',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   logoBadge: {
     width: 52,
@@ -515,7 +793,7 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 20,
     paddingBottom: 18,
-    gap: 16,
+    gap: 12,
   },
   statePanel: {
     flex: 1,
@@ -555,75 +833,6 @@ const styles = StyleSheet.create({
     width: 82,
     height: 82,
     opacity: 0.95,
-  },
-  heroCard: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 14,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 28,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: '#DBEEF9',
-    shadowColor: colors.shadow,
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-    shadowOffset: {width: 0, height: 4},
-    elevation: 3,
-  },
-  heroAvatar: {
-    width: 58,
-    height: 58,
-    borderRadius: 20,
-    backgroundColor: '#DFF2FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  heroAvatarText: {
-    fontFamily: 'Poppins-ExtraBold',
-    fontSize: 18,
-    color: colors.primary,
-  },
-  heroCopy: {
-    flex: 1,
-    gap: 3,
-  },
-  heroLabel: {
-    fontFamily: 'Poppins-Bold',
-    fontSize: 12,
-    color: colors.primary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-  },
-  heroTitle: {
-    fontFamily: 'Poppins-ExtraBold',
-    fontSize: 21,
-    color: '#17375A',
-  },
-  heroBody: {
-    fontSize: 14,
-    lineHeight: 22,
-    color: '#648094',
-  },
-  heroStatusPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    borderRadius: 999,
-    backgroundColor: '#EDF9F1',
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  heroStatusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 999,
-    backgroundColor: colors.success,
-  },
-  heroStatusText: {
-    fontFamily: 'Poppins-Bold',
-    fontSize: 12,
-    color: '#339859',
   },
   messagesScroll: {
     flex: 1,
@@ -677,8 +886,16 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.primary,
   },
-  messageBubble: {
+  messageContent: {
     maxWidth: '78%',
+  },
+  messageContentIncoming: {
+    alignItems: 'flex-start',
+  },
+  messageContentOutgoing: {
+    alignItems: 'flex-end',
+  },
+  messageBubble: {
     borderRadius: 24,
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -695,7 +912,7 @@ const styles = StyleSheet.create({
   },
   messageText: {
     fontSize: 15,
-    lineHeight: 22,
+    lineHeight: 15,
   },
   messageTextIncoming: {
     color: '#17375A',
@@ -721,9 +938,16 @@ const styles = StyleSheet.create({
   messageMetaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-end',
     gap: 6,
     marginTop: 6,
+    paddingHorizontal: 4,
+  },
+  messageMetaRowIncoming: {
+    justifyContent: 'flex-start',
+  },
+  messageMetaRowOutgoing: {
+    alignSelf: 'flex-end',
+    justifyContent: 'flex-end',
   },
   messageTime: {
     fontSize: 11,
@@ -732,7 +956,17 @@ const styles = StyleSheet.create({
     color: '#7B92A6',
   },
   messageTimeOutgoing: {
-    color: 'rgba(255,255,255,0.72)',
+    color: '#7B92A6',
+  },
+  messageStatusText: {
+    fontFamily: 'Poppins-SemiBold',
+    fontSize: 11,
+  },
+  messageStatusTextPending: {
+    color: '#7B92A6',
+  },
+  messageStatusTextRead: {
+    color: colors.primary,
   },
   quickReplyRow: {
     flexDirection: 'row',

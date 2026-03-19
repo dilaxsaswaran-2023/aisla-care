@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "185702806964",
+    "firebase_url": "https://aisla-care-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "aisla-care",
+    "storage_bucket": "aisla-care.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:185702806964:android:ba2276a27edb98195aaee1",
+        "android_client_info": {
+          "package_name": "com.aislacaremobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyANPNuhuWzrexsNqI2AreJIj5mP8NcIVq0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

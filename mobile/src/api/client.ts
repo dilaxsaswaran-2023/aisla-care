@@ -3,6 +3,7 @@ import type {
   ApiResponse,
   ChatMessage,
   LocationReading,
+  MedicationSchedule,
   PatientRelationshipGroup,
   Reminder,
   UserSession,
@@ -29,6 +30,14 @@ type BackendReminder = {
   completed_at?: string | null;
 };
 
+type BackendMedicationSchedule = {
+  id: string;
+  patient_id: string;
+  medicine_name: string;
+  scheduled_time: string;
+  is_active: boolean;
+};
+
 type BackendRefreshResponse = {
   accessToken: string;
   refreshToken: string;
@@ -53,6 +62,44 @@ type BackendSosAlertResponse = {
   created_at?: string;
 };
 
+const medicationScheduleCarryWindowMs = 60_000;
+
+function buildMedicationScheduledFor(scheduledTime: string): string {
+  const match = scheduledTime.trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+
+  if (!match) {
+    return scheduledTime;
+  }
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  const seconds = Number(match[3] ?? '0');
+
+  if (
+    Number.isNaN(hours) ||
+    Number.isNaN(minutes) ||
+    Number.isNaN(seconds) ||
+    hours < 0 ||
+    hours > 23 ||
+    minutes < 0 ||
+    minutes > 59 ||
+    seconds < 0 ||
+    seconds > 59
+  ) {
+    return scheduledTime;
+  }
+
+  const now = new Date();
+  const scheduledAt = new Date(now);
+  scheduledAt.setHours(hours, minutes, seconds, 0);
+
+  if (scheduledAt.getTime() < now.getTime() - medicationScheduleCarryWindowMs) {
+    scheduledAt.setDate(scheduledAt.getDate() + 1);
+  }
+
+  return scheduledAt.toISOString();
+}
+
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message) {
     return error.message;
@@ -64,11 +111,31 @@ function getErrorMessage(error: unknown): string {
 class ApiClient {
   readonly baseUrl = APP_CONFIG.apiBaseUrl;
   readonly socketUrl = APP_CONFIG.socketUrl;
+  readonly remindersApiPath = '/reminders/';
+  readonly patientLocationApiPath = '/gps/patient/location';
+  readonly sosAlertApiPath = '/alerts/sos';
+  readonly medicationSchedulesApiPath = '/medication-schedules/';
 
   private accessToken: string | null = null;
   private refreshToken: string | null = null;
   private session: UserSession | null = null;
   private refreshRequest: Promise<void> | null = null;
+
+  get patientLocationApiUrl(): string {
+    return `${this.baseUrl}${this.patientLocationApiPath}`;
+  }
+
+  get remindersApiUrl(): string {
+    return `${this.baseUrl}${this.remindersApiPath}`;
+  }
+
+  get sosAlertApiUrl(): string {
+    return `${this.baseUrl}${this.sosAlertApiPath}`;
+  }
+
+  get medicationSchedulesApiUrl(): string {
+    return `${this.baseUrl}${this.medicationSchedulesApiPath}`;
+  }
 
   private createSession(data: BackendLoginResponse): UserSession {
     return {
@@ -100,12 +167,22 @@ class ApiClient {
       headers.set('Authorization', `Bearer ${this.accessToken}`);
     }
 
-    const response = await fetch(`${this.baseUrl}${path}`, {
+    const url = `${this.baseUrl}${path}`;
+    const response = await fetch(url, {
       ...init,
       headers,
     });
 
-    const data = await response.json().catch(() => null);
+    const responseText = await response.text();
+    let data: unknown = null;
+
+    if (responseText.trim().length > 0) {
+      try {
+        data = JSON.parse(responseText);
+      } catch {
+        data = null;
+      }
+    }
 
     if (
       response.status === 401 &&
@@ -118,6 +195,16 @@ class ApiClient {
     }
 
     if (!response.ok) {
+      if (__DEV__) {
+        console.warn('API request failed.', {
+          url,
+          method: init.method ?? 'GET',
+          status: response.status,
+          responseText,
+          responseBody: data,
+        });
+      }
+
       throw new Error(
         typeof data === 'object' &&
         data !== null &&
@@ -288,7 +375,7 @@ class ApiClient {
 
   async getReminders(): Promise<ApiResponse<Reminder[]>> {
     const reminders = await this.request<BackendReminder[]>(
-      '/reminders/',
+      this.remindersApiPath,
       undefined,
       true,
     );
@@ -312,12 +399,28 @@ class ApiClient {
     );
   }
 
+  async getMedicationSchedules(): Promise<MedicationSchedule[]> {
+    const schedules = await this.request<BackendMedicationSchedule[]>(
+      this.medicationSchedulesApiPath,
+      undefined,
+      true,
+    );
+
+    return schedules.map(schedule => ({
+      id: schedule.id,
+      medicineName: schedule.medicine_name,
+      scheduledTime: schedule.scheduled_time,
+      scheduledFor: buildMedicationScheduledFor(schedule.scheduled_time),
+      isActive: schedule.is_active,
+    }));
+  }
+
   async sendPatientLocation(
     location: LocationReading,
     patientId?: string,
   ): Promise<BackendPatientLocationResponse> {
     return this.request<BackendPatientLocationResponse>(
-      '/gps/patient/location',
+      this.patientLocationApiPath,
       {
         method: 'POST',
         body: JSON.stringify({
@@ -337,7 +440,7 @@ class ApiClient {
     voiceTranscription?: string;
   }): Promise<BackendSosAlertResponse> {
     return this.request<BackendSosAlertResponse>(
-      '/alerts/sos',
+      this.sosAlertApiPath,
       {
         method: 'POST',
         body: JSON.stringify({

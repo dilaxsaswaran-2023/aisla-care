@@ -15,16 +15,18 @@ import {colors} from '../constants/colors';
 import {CompleteInviteScreen} from '../screens/login/CompleteInviteScreen';
 import {LoginScreen} from '../screens/login/LoginScreen';
 import {PatientCaregiverChatScreen} from '../screens/patient/PatientCaregiverChatScreen';
+import {PatientCaregiverDirectoryScreen} from '../screens/patient/PatientCaregiverDirectoryScreen';
 import {PatientHomeScreen} from '../screens/patient/PatientHomeScreen';
 import {locationService} from '../services/locationService';
+import {pushNotificationService} from '../services/pushNotificationService';
 import {
   clearPersistedSession,
   loadPersistedSession,
   savePersistedSession,
 } from '../services/sessionStorage';
-import type {UserSession} from '../types/models';
+import type {CaregiverContact, UserSession} from '../types/models';
 
-type PatientRoute = 'home' | 'caregiverChat';
+type PatientRoute = 'home' | 'caregiverDirectory' | 'caregiverChat';
 const patientLocationSyncIntervalMs = 60 * 1000;
 
 function AuthLoadingScreen(): React.JSX.Element {
@@ -44,6 +46,8 @@ function AuthLoadingScreen(): React.JSX.Element {
 export function RootNavigator(): React.JSX.Element {
   const [session, setSession] = useState<UserSession | null>(null);
   const [patientRoute, setPatientRoute] = useState<PatientRoute>('home');
+  const [selectedCaregiver, setSelectedCaregiver] =
+    useState<CaregiverContact | null>(null);
   const [isRestoringSession, setIsRestoringSession] = useState(true);
   const [shouldPersistSession, setShouldPersistSession] = useState(false);
   const authRequestIdRef = useRef(0);
@@ -111,6 +115,32 @@ export function RootNavigator(): React.JSX.Element {
 
   useEffect(() => {
     if (!session || session.role !== 'patient') {
+      pushNotificationService.cleanup();
+      return;
+    }
+
+    pushNotificationService
+      .initialize({
+        onNotificationOpen: target => {
+          if (target === 'caregiverChat') {
+            setPatientRoute('caregiverDirectory');
+            return;
+          }
+
+          if (target === 'home') {
+            setPatientRoute('home');
+          }
+        },
+      })
+      .catch(() => undefined);
+
+    return () => {
+      pushNotificationService.cleanup();
+    };
+  }, [session]);
+
+  useEffect(() => {
+    if (!session || session.role !== 'patient') {
       return;
     }
 
@@ -122,10 +152,29 @@ export function RootNavigator(): React.JSX.Element {
       }
 
       locationSyncInFlightRef.current = true;
+      let syncStage: 'capture' | 'upload' = 'capture';
+      let capturedLocation: Awaited<
+        ReturnType<typeof locationService.getCurrentLocation>
+      > | null = null;
+      let patientLocationPayload: {
+        patient_id: string;
+        lat: number;
+        lng: number;
+        accuracy: number | null;
+        captured_at: string;
+      } | null = null;
 
       try {
-        const location = await locationService.getCurrentLocation();
-        await apiClient.sendPatientLocation(location, session.userId);
+        capturedLocation = await locationService.getCurrentLocation();
+        patientLocationPayload = {
+          patient_id: session.userId,
+          lat: capturedLocation.latitude,
+          lng: capturedLocation.longitude,
+          accuracy: capturedLocation.accuracy,
+          captured_at: capturedLocation.capturedAt,
+        };
+        syncStage = 'upload';
+        await apiClient.sendPatientLocation(capturedLocation, session.userId);
 
         if (shouldPersistSession) {
           const currentSession = apiClient.getSession();
@@ -136,7 +185,13 @@ export function RootNavigator(): React.JSX.Element {
         }
       } catch (error) {
         if (__DEV__) {
-          console.warn('Patient location sync failed.', error);
+          console.warn('Patient location sync failed.', {
+            stage: syncStage,
+            api: apiClient.patientLocationApiUrl,
+            payload: patientLocationPayload,
+            location: capturedLocation,
+            error,
+          });
         }
       } finally {
         locationSyncInFlightRef.current = false;
@@ -180,6 +235,7 @@ export function RootNavigator(): React.JSX.Element {
           const requestId = authRequestIdRef.current + 1;
           authRequestIdRef.current = requestId;
           setPatientRoute('home');
+          setSelectedCaregiver(null);
           apiClient.clearSession();
 
           try {
@@ -265,15 +321,51 @@ export function RootNavigator(): React.JSX.Element {
     <>
       <PatientHomeScreen
         onSendSos={async payload => {
-          await apiClient.sendSosAlert(payload);
+          const requestBody = {
+            message: payload.message,
+            voice_transcription: payload.voiceTranscription,
+          };
+
+          if (__DEV__) {
+            console.log('SOS alert request.', {
+              api: apiClient.sosAlertApiUrl,
+              method: 'POST',
+              payload: requestBody,
+            });
+          }♦
+
+          try {
+            const response = await apiClient.sendSosAlert(payload);
+
+            if (__DEV__) {
+              console.log('SOS alert response.', {
+                api: apiClient.sosAlertApiUrl,
+                method: 'POST',
+                payload: requestBody,
+                response,
+              });
+            }
+          } catch (error) {
+            if (__DEV__) {
+              console.warn('SOS alert request failed.', {
+                api: apiClient.sosAlertApiUrl,
+                method: 'POST',
+                payload: requestBody,
+                error,
+              });
+            }
+
+            throw error;
+          }
         }}
         onOpenCaregiverChat={() => {
-          setPatientRoute('caregiverChat');
+          setPatientRoute('caregiverDirectory');
         }}
         onSignOut={async () => {
           const requestId = authRequestIdRef.current + 1;
           authRequestIdRef.current = requestId;
           setPatientRoute('home');
+          setSelectedCaregiver(null);
 
           try {
             await apiClient.logout();
@@ -293,15 +385,30 @@ export function RootNavigator(): React.JSX.Element {
       <Modal
         animationType="slide"
         onRequestClose={() => {
-          setPatientRoute('home');
+          setPatientRoute(previousRoute =>
+            previousRoute === 'caregiverChat' ? 'caregiverDirectory' : 'home',
+          );
         }}
         presentationStyle="fullScreen"
-        visible={patientRoute === 'caregiverChat'}>
-        <PatientCaregiverChatScreen
-          onBack={() => {
-            setPatientRoute('home');
-          }}
-        />
+        visible={patientRoute !== 'home'}>
+        {patientRoute === 'caregiverDirectory' || !selectedCaregiver ? (
+          <PatientCaregiverDirectoryScreen
+            onBack={() => {
+              setPatientRoute('home');
+            }}
+            onSelectCaregiver={caregiver => {
+              setSelectedCaregiver(caregiver);
+              setPatientRoute('caregiverChat');
+            }}
+          />
+        ) : (
+          <PatientCaregiverChatScreen
+            caregiver={selectedCaregiver}
+            onBack={() => {
+              setPatientRoute('caregiverDirectory');
+            }}
+          />
+        )}
       </Modal>
     </>
   );

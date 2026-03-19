@@ -3,14 +3,17 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "android": "react-native run-android",
-    "ios": "react-native run-ios",
+    "android": "react-native run-android --no-packager",
+    "ios": "react-native run-ios --no-packager",
     "lint": "eslint .",
-    "start": "react-native start",
+    "start": "react-native start --experimental-debugger",
     "test": "jest"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "1.21.0",
+    "@react-native-community/netinfo": "^12.0.1",
+    "@react-native-firebase/app": "^23.8.8",
+    "@react-native-firebase/messaging": "^23.8.8",
     "@react-native-voice/voice": "^3.2.4",
     "@reduxjs/toolkit": "^2.11.2",
     "react": "18.2.0",
@@ -19,7 +22,8 @@
     "react-native-sound": "^0.11.2",
     "react-native-tts": "^4.1.1",
     "react-native-vector-icons": "^10.1.0",
-    "react-redux": "^9.2.0"
+    "react-redux": "^9.2.0",
+    "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",

@@ -182,14 +182,28 @@ cd ..
 ### Run Android
 
 ```bash
-npx react-native run-android
+npm start
+npm run android
 ```
 
 ### Run iOS
 
 ```bash
-npx react-native run-ios
+npm start
+npm run ios
 ```
+
+### Debugging
+
+This project uses React Native DevTools instead of Flipper.
+
+Start Metro with:
+
+```bash
+npm start
+```
+
+Then open DevTools from the Metro terminal with `j`, or use the in-app developer menu and choose the debugger option.
 
 ---
 
