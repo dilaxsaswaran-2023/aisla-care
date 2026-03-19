@@ -1,9 +1,24 @@
 import { useMemo, useState } from "react";
-import { AlertCircle, CheckCircle2, MessageSquare, Phone, X, ChevronRight } from "lucide-react";
-import { Button } from '@/components/ui/button';
+import {
+  AlertCircle,
+  CheckCircle2,
+  MessageSquare,
+  Phone,
+  X,
+  ChevronRight,
+  Siren,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { formatTime } from '@/lib/datetime';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { formatTime } from "@/lib/datetime";
 
 interface AlertItem {
   id: string;
@@ -42,43 +57,88 @@ interface EmergencyBannerProps {
   userRole?: string;
 }
 
-export const EmergencyBanner = ({ 
-  alert, 
-  onClose, 
-  onAcknowledge, 
+const formatAlertType = (value?: string) =>
+  (value || "")
+    .toLowerCase()
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+
+const getAlertTone = (alert?: AlertItem | null) => {
+  const type = (alert?.alert_type || "").toLowerCase();
+  const priority = (alert?.priority || "").toLowerCase();
+  const source = (alert?.source || "").toLowerCase();
+
+  if (type.includes("sos") || priority === "critical" || source === "budii") {
+    return {
+      shell:
+        "from-red-500/28 via-rose-500/14 to-red-100/40 dark:from-red-500/22 dark:via-rose-500/12 dark:to-red-950/30",
+      panel:
+        "bg-gradient-to-br from-white via-red-50/80 to-rose-50/70 dark:from-zinc-950 dark:via-red-950/35 dark:to-rose-950/25",
+      icon:
+        "border-red-300 bg-red-100 text-red-700 shadow-[0_14px_34px_-14px_rgba(239,68,68,0.55)] dark:border-red-800 dark:bg-red-950/60 dark:text-red-300",
+      glow: "bg-red-500/25",
+      badge: "destructive" as const,
+    };
+  }
+
+  if (type.includes("geofence")) {
+    return {
+      shell:
+        "from-amber-500/28 via-orange-500/14 to-amber-100/40 dark:from-amber-500/22 dark:via-orange-500/12 dark:to-amber-950/30",
+      panel:
+        "bg-gradient-to-br from-white via-amber-50/80 to-orange-50/70 dark:from-zinc-950 dark:via-amber-950/35 dark:to-orange-950/25",
+      icon:
+        "border-amber-300 bg-amber-100 text-amber-700 shadow-[0_14px_34px_-14px_rgba(245,158,11,0.55)] dark:border-amber-800 dark:bg-amber-950/60 dark:text-amber-300",
+      glow: "bg-amber-500/25",
+      badge: "secondary" as const,
+    };
+  }
+
+  return {
+    shell:
+      "from-violet-500/28 via-fuchsia-500/14 to-violet-100/40 dark:from-violet-500/22 dark:via-fuchsia-500/12 dark:to-violet-950/30",
+    panel:
+      "bg-gradient-to-br from-white via-violet-50/80 to-fuchsia-50/70 dark:from-zinc-950 dark:via-violet-950/35 dark:to-fuchsia-950/25",
+    icon:
+      "border-violet-300 bg-violet-100 text-violet-700 shadow-[0_14px_34px_-14px_rgba(139,92,246,0.55)] dark:border-violet-800 dark:bg-violet-950/60 dark:text-violet-300",
+    glow: "bg-violet-500/25",
+    badge: "outline" as const,
+  };
+};
+
+export const EmergencyBanner = ({
+  alert,
+  onClose,
+  onAcknowledge,
   onOpenMessages,
   onOpenMessageWith,
   messageContacts = [],
-  userRole = ""
+  userRole = "",
 }: EmergencyBannerProps) => {
   const [followupOpen, setFollowupOpen] = useState(false);
   const [messageSubmenuOpen, setMessageSubmenuOpen] = useState(false);
   const [savingHow, setSavingHow] = useState<string | null>(null);
 
-  if (!alert) return null;
-
-  // Get contacts for this patient based on user role
   const relevantContacts = useMemo(() => {
-    if (!alert.patient_name) return [];
-    
-    // Filter contacts that match this patient
-    const patientContacts = messageContacts.filter(c => c.patient_name === alert.patient_name);
-    
-    // Filter based on user role
-    if (userRole.toLowerCase() === "caregiver") {
-      // Caregiver can message: patient and family members
-      return patientContacts.filter(c => !c.role || c.role.toLowerCase() !== "caregiver");
-    } else if (userRole.toLowerCase() === "family") {
-      // Family can message: patient and caregiver
-      return patientContacts.filter(c => !c.role || c.role.toLowerCase() !== "family");
-    }
-    
-    return patientContacts;
-  }, [messageContacts, alert.patient_name, userRole]);
+    if (!alert?.patient_name) return [];
 
-  const alertTypeLabel = alert.alert_type;
-  const normalizedType = (alert.alert_type || "").toLowerCase();
-  const normalizedSource = (alert.source || "").toLowerCase();
+    const patientContacts = messageContacts.filter((c) => c.patient_name === alert.patient_name);
+
+    if (userRole.toLowerCase() === "caregiver") {
+      return patientContacts.filter((c) => !c.role || c.role.toLowerCase() !== "caregiver");
+    }
+
+    if (userRole.toLowerCase() === "family") {
+      return patientContacts.filter((c) => !c.role || c.role.toLowerCase() !== "family");
+    }
+
+    return patientContacts;
+  }, [messageContacts, alert?.patient_name, userRole]);
+
+  const normalizedType = (alert?.alert_type || "").toLowerCase();
+  const normalizedSource = (alert?.source || "").toLowerCase();
 
   const followUpMode = useMemo(() => {
     if (normalizedSource === "budii") {
@@ -105,38 +165,51 @@ export const EmergencyBanner = ({
     };
   }, [normalizedSource, normalizedType]);
 
-  const phoneNumber = [alert.patient_phone_country, alert.patient_phone_number]
-    .filter((part) => !!part)
-    .join("");
+  const phoneNumber = useMemo(
+    () =>
+      [alert?.patient_phone_country, alert?.patient_phone_number]
+        .filter((part) => !!part)
+        .join(""),
+    [alert?.patient_phone_country, alert?.patient_phone_number],
+  );
+
+  const tone = useMemo(() => getAlertTone(alert), [alert]);
+  const alertTypeLabel = useMemo(() => formatAlertType(alert?.alert_type), [alert?.alert_type]);
 
   const handleAcknowledge = async (how: string) => {
     setSavingHow(how);
     try {
       await onAcknowledge(how);
+
       if (how === "message") {
-        // If there are multiple contacts, show submenu instead of directly opening messages
-        if (relevantContacts.length > 1) {
-          setMessageSubmenuOpen(true);
-        } else if (relevantContacts.length === 1) {
-          // If only one contact, open message with that contact
+        if (relevantContacts.length === 1) {
           onOpenMessageWith?.(relevantContacts[0].id);
-          onOpenMessages();
-        } else {
-          // Fallback: just open messages tab
-          onOpenMessages();
         }
+        onOpenMessages();
       }
-      // Don't close followup modal yet if we're showing message submenu
-      if (how !== "message" || relevantContacts.length <= 1) {
-        setFollowupOpen(false);
-      }
+
+      setFollowupOpen(false);
+      setMessageSubmenuOpen(false);
     } finally {
       setSavingHow(null);
     }
   };
 
-  const handleMessageContact = async (contactId: string, contactName: string) => {
-    // Acknowledge as message
+  const handleOpenMessageSelector = () => {
+    if (relevantContacts.length > 1) {
+      setMessageSubmenuOpen(true);
+      return;
+    }
+
+    if (relevantContacts.length === 1) {
+      handleMessageContact(relevantContacts[0].id);
+      return;
+    }
+
+    handleAcknowledge("message");
+  };
+
+  const handleMessageContact = async (contactId: string) => {
     setSavingHow("message");
     try {
       await onAcknowledge("message");
@@ -155,161 +228,210 @@ export const EmergencyBanner = ({
     window.location.href = `tel:${phoneNumber}`;
   };
 
+  if (!alert) return null;
+
   return (
     <>
-      <div className="rounded-2xl border border-destructive/30 bg-gradient-to-r from-destructive/10 via-background to-background p-4 shadow-sm">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-start gap-3 flex-1">
-            <AlertCircle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" />
-            <div className="flex-1 min-w-0">
-              <div className="font-bold text-destructive text-sm mb-1 tracking-wide">
-                {alertTypeLabel}
+      <div className="relative overflow-hidden rounded-[30px] border border-border/80 bg-gradient-to-br p-[1.5px] shadow-[0_18px_50px_-20px_rgba(0,0,0,0.28)]">
+        <div className={`absolute inset-0 bg-gradient-to-br ${tone.shell}`} />
+        <div className={`absolute -right-10 -top-10 h-32 w-32 rounded-full blur-3xl ${tone.glow}`} />
+        <div className={`absolute bottom-0 left-6 h-24 w-24 rounded-full blur-2xl ${tone.glow}`} />
+
+        <div className={`relative rounded-[28px] ${tone.panel} border border-white/50 dark:border-white/5 backdrop-blur-xl`}>
+          <div className="flex flex-col gap-4 p-4 sm:p-5 lg:flex-row lg:items-start lg:justify-between">
+            <div className="flex min-w-0 flex-1 items-start gap-3 sm:gap-4">
+              <div
+                className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border-2 ${tone.icon}`}
+              >
+                <Siren className="h-5 w-5" />
               </div>
-              <div className="text-foreground font-semibold text-sm break-words">
-                {alert.patient_name ? `${alert.patient_name}: ` : ''}{alert.title}
-              </div>
-              <div className="text-muted-foreground text-xs mt-1 break-words">
-                {alert.message}
-              </div>
-              {alert.voice_transcription && (
-                <div className="text-muted-foreground text-xs italic mt-1 break-words">
-                  📝 {alert.voice_transcription}
-                </div>
-              )}
-              <div className="text-destructive/80 text-xs mt-1">
-                {formatTime(alert.created_at)}
-              </div>
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <Button
-                  size="sm"
-                  className="h-8"
-                  onClick={() => setFollowupOpen(true)}
-                  disabled={!!alert.is_acknowledged}
-                >
-                  Follow up
-                </Button>
-                {alert.is_acknowledged ? (
-                  <Badge className="bg-green-100 text-green-800 border border-green-300">
-                    <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
-                    Acknowledged via {alert.acknowledged_via || "manual"}
+
+              <div className="min-w-0 flex-1">
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <Badge
+                    variant={tone.badge}
+                    className="rounded-full px-3 py-1 text-[10px] font-semibold tracking-[0.12em] uppercase shadow-sm"
+                  >
+                    {alertTypeLabel}
                   </Badge>
-                ) : null}
+
+                  {alert.priority ? (
+                    <Badge variant="outline" className="rounded-full border-border/70 bg-background/85 px-3 py-1 text-[10px] capitalize shadow-sm">
+                      {alert.priority}
+                    </Badge>
+                  ) : null}
+
+                  {alert.source ? (
+                    <Badge variant="outline" className="rounded-full border-border/70 bg-background/85 px-3 py-1 text-[10px] capitalize shadow-sm">
+                      {alert.source}
+                    </Badge>
+                  ) : null}
+
+                  {alert.is_acknowledged ? (
+                    <Badge className="rounded-full border border-green-300 bg-green-100 px-3 py-1 text-[10px] text-green-800 shadow-sm dark:border-green-800 dark:bg-green-950/60 dark:text-green-300">
+                      <CheckCircle2 className="mr-1 h-3.5 w-3.5" />
+                      Acknowledged via {alert.acknowledged_via || "manual"}
+                    </Badge>
+                  ) : null}
+                </div>
+
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <p className="break-words text-sm font-semibold text-foreground sm:text-[15px]">
+                      {alert.patient_name ? `${alert.patient_name}: ` : ""}
+                      {alert.title}
+                    </p>
+
+                    <p className="break-words text-xs leading-5 text-muted-foreground sm:text-[13px]">
+                      {alert.message}
+                    </p>
+
+                    {alert.voice_transcription ? (
+                      <div className="rounded-2xl border border-border/70 bg-background/85 px-3 py-2 text-xs italic text-muted-foreground shadow-sm">
+                        📝 {alert.voice_transcription}
+                      </div>
+                    ) : null}
+
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      <div className="flex items-center gap-1.5 rounded-full border border-border/70 bg-background/90 px-3 py-1.5 text-[11px] text-muted-foreground shadow-sm">
+                        <AlertCircle className="h-3.5 w-3.5" />
+                        <span>{formatTime(alert.created_at)}</span>
+                      </div>
+
+                      {alert.status ? (
+                        <div className="rounded-full border border-border/70 bg-background/90 px-3 py-1.5 text-[11px] capitalize text-muted-foreground shadow-sm">
+                          Status: {alert.status}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto lg:justify-end">
+                    <Button
+                      size="sm"
+                      onClick={() => setFollowupOpen(true)}
+                      disabled={!!alert.is_acknowledged}
+                      className="h-10 flex-1 rounded-2xl px-4 shadow-[0_10px_24px_-12px_rgba(0,0,0,0.35)] sm:flex-none"
+                    >
+                      Acknowledge & Follow-up
+                    </Button>
+
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={onClose}
+                      className="h-10 w-10 rounded-2xl border border-border/70 bg-background/85 text-muted-foreground shadow-sm transition-colors hover:bg-background"
+                      title="Close banner"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onClose}
-            className="flex-shrink-0 text-destructive hover:bg-destructive/10"
-            title="Close banner"
-          >
-            <X className="w-4 h-4" />
-          </Button>
         </div>
       </div>
 
       <Dialog open={followupOpen} onOpenChange={setFollowupOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{followUpMode.title}</DialogTitle>
-            <DialogDescription>{followUpMode.description}</DialogDescription>
-          </DialogHeader>
+        <DialogContent className="overflow-hidden rounded-[30px] border border-border/80 bg-background/98 p-0 shadow-[0_24px_70px_-24px_rgba(0,0,0,0.38)] backdrop-blur-xl sm:max-w-[560px]">
+          <div className={`relative border-b border-border/70 bg-gradient-to-br ${tone.shell} px-6 py-5`}>
+            <div className={`absolute right-0 top-0 h-32 w-32 rounded-full blur-3xl ${tone.glow}`} />
+            <DialogHeader className="relative">
+              <DialogTitle className="text-lg">{followUpMode.title}</DialogTitle>
+              <DialogDescription className="pt-1 text-sm">
+                {followUpMode.description}
+              </DialogDescription>
+            </DialogHeader>
+          </div>
 
-          <div className="grid gap-2">
+          <div className="space-y-3 px-6 py-5">
             <Button
               variant="outline"
-              className="justify-start"
+              className="h-12 w-full justify-start rounded-2xl border-border/70 bg-background shadow-md"
               disabled={!phoneNumber || !!savingHow}
               onClick={handleCallAndAcknowledge}
             >
-              <Phone className="w-4 h-4 mr-2" />
+              <Phone className="mr-2 h-4 w-4" />
               Call patient {phoneNumber ? `(${phoneNumber})` : "(no phone available)"}
             </Button>
 
-            {/* Message button with conditional behavior */}
-            {relevantContacts.length > 1 ? (
-              <Button
-                variant="outline"
-                className="justify-between"
-                disabled={!!savingHow}
-                onClick={() => setMessageSubmenuOpen(true)}
-              >
-                <span className="flex items-center">
-                  <MessageSquare className="w-4 h-4 mr-2" />
-                  Message care team and acknowledge
-                </span>
-                <ChevronRight className="w-4 h-4" />
-              </Button>
-            ) : relevantContacts.length === 1 ? (
-              <Button
-                variant="outline"
-                className="justify-start"
-                disabled={!!savingHow}
-                onClick={() => handleMessageContact(relevantContacts[0].id, relevantContacts[0].name)}
-              >
-                <MessageSquare className="w-4 h-4 mr-2" />
-                Message {relevantContacts[0].name} and acknowledge
-              </Button>
-            ) : (
-              <Button
-                variant="outline"
-                className="justify-start"
-                disabled={!!savingHow}
-                onClick={() => handleAcknowledge("message")}
-              >
-                <MessageSquare className="w-4 h-4 mr-2" />
-                Message care team and acknowledge
-              </Button>
-            )}
+            <Button
+              variant="outline"
+              className="h-12 w-full justify-between rounded-2xl border-border/70 bg-background shadow-md"
+              disabled={!!savingHow}
+              onClick={handleOpenMessageSelector}
+            >
+              <span className="flex items-center">
+                <MessageSquare className="mr-2 h-4 w-4" />
+                {relevantContacts.length === 1
+                  ? `Message ${relevantContacts[0].name} and acknowledge`
+                  : "Message care team and acknowledge"}
+              </span>
+              {relevantContacts.length > 1 ? <ChevronRight className="h-4 w-4" /> : null}
+            </Button>
 
             <Button
-              className="justify-start"
+              className="h-12 w-full justify-start rounded-2xl shadow-[0_10px_24px_-12px_rgba(0,0,0,0.35)]"
               disabled={!!savingHow}
               onClick={() => handleAcknowledge("manual_followup")}
             >
-              <CheckCircle2 className="w-4 h-4 mr-2" />
-              Mark as acknowledged (manual follow-up)
+              <CheckCircle2 className="mr-2 h-4 w-4" />
+              Mark as acknowledged
             </Button>
           </div>
 
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setFollowupOpen(false)} disabled={!!savingHow}>
+          <DialogFooter className="border-t border-border/70 bg-muted/20 px-6 py-4">
+            <Button
+              variant="ghost"
+              onClick={() => setFollowupOpen(false)}
+              disabled={!!savingHow}
+              className="rounded-2xl"
+            >
               Cancel
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Message contact selection submenu */}
       <Dialog open={messageSubmenuOpen} onOpenChange={setMessageSubmenuOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Select Contact</DialogTitle>
-            <DialogDescription>Who would you like to message?</DialogDescription>
-          </DialogHeader>
+        <DialogContent className="overflow-hidden rounded-[30px] border border-border/80 bg-background/98 p-0 shadow-[0_24px_70px_-24px_rgba(0,0,0,0.38)] backdrop-blur-xl sm:max-w-[500px]">
+          <div className={`relative border-b border-border/70 bg-gradient-to-br ${tone.shell} px-6 py-5`}>
+            <div className={`absolute right-0 top-0 h-32 w-32 rounded-full blur-3xl ${tone.glow}`} />
+            <DialogHeader className="relative">
+              <DialogTitle className="text-lg">Select Contact</DialogTitle>
+              <DialogDescription className="pt-1 text-sm">
+                Choose who you want to message for this alert.
+              </DialogDescription>
+            </DialogHeader>
+          </div>
 
-          <div className="grid gap-2">
+          <div className="space-y-3 px-6 py-5">
             {relevantContacts.map((contact) => (
               <Button
                 key={contact.id}
                 variant="outline"
-                className="justify-start h-auto py-3"
+                className="h-auto w-full justify-start rounded-2xl border-border/70 bg-background px-4 py-3 shadow-md"
                 disabled={!!savingHow}
-                onClick={() => handleMessageContact(contact.id, contact.name)}
+                onClick={() => handleMessageContact(contact.id)}
               >
                 <div className="text-left">
-                  <div className="font-semibold text-sm">{contact.name}</div>
-                  {contact.role && (
-                    <div className="text-xs text-muted-foreground capitalize">{contact.role}</div>
-                  )}
+                  <div className="text-sm font-semibold">{contact.name}</div>
+                  {contact.role ? (
+                    <div className="text-xs capitalize text-muted-foreground">{contact.role}</div>
+                  ) : null}
                 </div>
               </Button>
             ))}
           </div>
 
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setMessageSubmenuOpen(false)} disabled={!!savingHow}>
+          <DialogFooter className="border-t border-border/70 bg-muted/20 px-6 py-4">
+            <Button
+              variant="ghost"
+              onClick={() => setMessageSubmenuOpen(false)}
+              disabled={!!savingHow}
+              className="rounded-2xl"
+            >
               Cancel
             </Button>
           </DialogFooter>
@@ -318,4 +440,3 @@ export const EmergencyBanner = ({
     </>
   );
 };
-
