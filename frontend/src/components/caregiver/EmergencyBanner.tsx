@@ -73,12 +73,12 @@ const getAlertTone = (alert?: AlertItem | null) => {
   if (type.includes("sos") || priority === "critical" || source === "budii") {
     return {
       shell:
-        "from-red-500/28 via-rose-500/14 to-red-100/40 dark:from-red-500/22 dark:via-rose-500/12 dark:to-red-950/30",
+        "from-red-600/42 via-rose-500/24 to-red-200/55 dark:from-red-500/35 dark:via-rose-500/22 dark:to-red-950/45",
       panel:
-        "bg-gradient-to-br from-white via-red-50/80 to-rose-50/70 dark:from-zinc-950 dark:via-red-950/35 dark:to-rose-950/25",
+        "bg-gradient-to-br from-white via-red-50/95 to-rose-100/85 dark:from-zinc-950 dark:via-red-950/45 dark:to-rose-950/35",
       icon:
-        "border-red-300 bg-red-100 text-red-700 shadow-[0_14px_34px_-14px_rgba(239,68,68,0.55)] dark:border-red-800 dark:bg-red-950/60 dark:text-red-300",
-      glow: "bg-red-500/25",
+        "border-red-400 bg-red-100 text-red-700 shadow-[0_18px_38px_-16px_rgba(239,68,68,0.72)] dark:border-red-800 dark:bg-red-950/70 dark:text-red-300",
+      glow: "bg-red-500/35",
       badge: "destructive" as const,
     };
   }
@@ -86,24 +86,24 @@ const getAlertTone = (alert?: AlertItem | null) => {
   if (type.includes("geofence")) {
     return {
       shell:
-        "from-amber-500/28 via-orange-500/14 to-amber-100/40 dark:from-amber-500/22 dark:via-orange-500/12 dark:to-amber-950/30",
+        "from-orange-500/34 via-red-500/18 to-amber-100/45 dark:from-orange-500/30 dark:via-red-500/18 dark:to-amber-950/35",
       panel:
-        "bg-gradient-to-br from-white via-amber-50/80 to-orange-50/70 dark:from-zinc-950 dark:via-amber-950/35 dark:to-orange-950/25",
+        "bg-gradient-to-br from-white via-orange-50/85 to-amber-50/75 dark:from-zinc-950 dark:via-orange-950/40 dark:to-amber-950/30",
       icon:
-        "border-amber-300 bg-amber-100 text-amber-700 shadow-[0_14px_34px_-14px_rgba(245,158,11,0.55)] dark:border-amber-800 dark:bg-amber-950/60 dark:text-amber-300",
-      glow: "bg-amber-500/25",
+        "border-orange-300 bg-orange-100 text-orange-700 shadow-[0_16px_36px_-16px_rgba(249,115,22,0.62)] dark:border-orange-800 dark:bg-orange-950/65 dark:text-orange-300",
+      glow: "bg-orange-500/30",
       badge: "secondary" as const,
     };
   }
 
   return {
     shell:
-      "from-violet-500/28 via-fuchsia-500/14 to-violet-100/40 dark:from-violet-500/22 dark:via-fuchsia-500/12 dark:to-violet-950/30",
+      "from-rose-500/30 via-red-500/16 to-rose-100/45 dark:from-rose-500/26 dark:via-red-500/16 dark:to-rose-950/34",
     panel:
-      "bg-gradient-to-br from-white via-violet-50/80 to-fuchsia-50/70 dark:from-zinc-950 dark:via-violet-950/35 dark:to-fuchsia-950/25",
+      "bg-gradient-to-br from-white via-rose-50/82 to-red-50/72 dark:from-zinc-950 dark:via-rose-950/38 dark:to-red-950/28",
     icon:
-      "border-violet-300 bg-violet-100 text-violet-700 shadow-[0_14px_34px_-14px_rgba(139,92,246,0.55)] dark:border-violet-800 dark:bg-violet-950/60 dark:text-violet-300",
-    glow: "bg-violet-500/25",
+      "border-rose-300 bg-rose-100 text-rose-700 shadow-[0_14px_34px_-14px_rgba(244,63,94,0.58)] dark:border-rose-800 dark:bg-rose-950/60 dark:text-rose-300",
+    glow: "bg-rose-500/28",
     badge: "outline" as const,
   };
 };
@@ -232,7 +232,7 @@ export const EmergencyBanner = ({
 
   return (
     <>
-      <div className="relative overflow-hidden rounded-[30px] border border-border/80 bg-gradient-to-br p-[1.5px] shadow-[0_18px_50px_-20px_rgba(0,0,0,0.28)]">
+      <div className="relative overflow-hidden rounded-[30px] border border-red-300/40 bg-gradient-to-br from-red-50/25 to-rose-50/20 p-[1.5px] shadow-[0_20px_55px_-22px_rgba(220,38,38,0.38)] dark:border-red-700/35 dark:from-red-950/20 dark:to-rose-950/15">
         <div className={`absolute inset-0 bg-gradient-to-br ${tone.shell}`} />
         <div className={`absolute -right-10 -top-10 h-32 w-32 rounded-full blur-3xl ${tone.glow}`} />
         <div className={`absolute bottom-0 left-6 h-24 w-24 rounded-full blur-2xl ${tone.glow}`} />
