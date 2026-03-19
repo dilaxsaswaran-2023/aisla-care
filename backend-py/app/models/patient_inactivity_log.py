@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Column, String, DateTime, ForeignKey
+from sqlalchemy import Boolean, Column, String, DateTime, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 
 from app.database import Base
@@ -16,6 +16,9 @@ class PatientInactivityLog(Base):
 
     inactivity_type = Column(String, nullable=False, index=True)   # from activity_name
     inactivity_time = Column(DateTime, nullable=False, index=True)
+    is_patient_alert = Column(Boolean, nullable=False, default=False, server_default="false")
+    is_acknowledged = Column(Boolean, nullable=False, default=False, server_default="false")
+    acknowledged_via = Column(String, nullable=True)
 
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)

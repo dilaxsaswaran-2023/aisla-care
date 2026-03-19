@@ -1,24 +1,14 @@
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { AlertCircle, Bell, CheckCircle } from "lucide-react";
+import { AlertCircle, Bell, CheckCircle, Activity, AlertTriangle, MapPin, Pill, Clock } from "lucide-react";
 import { api } from "@/lib/api";
 import { AlertDetailModal } from "./AlertDetailModal";
-import { formatRelativeTime } from "@/lib/datetime";
+import { formatRelativeTime, parseDateTime } from "@/lib/datetime";
+import { ALERT_TABS, AlertLike, AlertTabKey, getAlertVisualStyle, matchesAlertTab } from "@/lib/alert-ui";
 
-interface AlertItem {
-  id: string;
-  alert_type: string;
-  status: string;
-  priority: string;
-  title: string;
-  message: string;
-  voice_transcription?: string;
-  patient_name?: string;
+interface AlertItem extends AlertLike {
   event_id?: string;
-  created_at: string;
-  source?: string;
-  is_read?: boolean;
   is_added_to_emergency?: boolean;
 }
 
@@ -37,8 +27,23 @@ export const NotificationDropdown = ({
   const [selectedAlert, setSelectedAlert] = useState<AlertItem | null>(null);
   const [detailData, setDetailData] = useState<any>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [activeTab, setActiveTab] = useState<AlertTabKey>("overall");
   const containerRef = useRef<HTMLDivElement | null>(null);
   const unread = alerts.filter(a => !a.is_read).length;
+  const sortedAlerts = [...alerts].sort((a, b) =>
+    (parseDateTime(b.created_at)?.getTime() || 0) - (parseDateTime(a.created_at)?.getTime() || 0)
+  );
+  const filteredAlerts = sortedAlerts.filter((alert) => matchesAlertTab(alert, activeTab));
+  const tabCounts = ALERT_TABS.reduce<Record<AlertTabKey, number>>((acc, tab) => {
+    acc[tab.key] = sortedAlerts.filter((alert) => matchesAlertTab(alert, tab.key)).length;
+    return acc;
+  }, {
+    overall: 0,
+    sos: 0,
+    geofence: 0,
+    medication: 0,
+    inactivity: 0,
+  });
 
   useEffect(() => {
     function handleOutside(e: MouseEvent | TouchEvent) {
@@ -63,57 +68,27 @@ export const NotificationDropdown = ({
     setOpen(false);
     if (!alert.is_read) {
       onAlertRead(alert.id, alert.source ?? 'normal');
-      const endpoint = alert.source === 'budii' ? `/budii-alerts/mark-read/${alert.id}` : `/alerts/mark-read/${alert.id}`;
-      api.patch(endpoint).catch(() => {});
+      if (alert.source === 'budii') {
+        api.patch(`/budii-alerts/mark-read/${alert.id}`).catch(() => {});
+      } else if (alert.source === 'sos') {
+        api.patch(`/sos-alerts/mark-read/${alert.id}`).catch(() => {});
+      }
     }
     try {
-      if (alert.source === 'budii') {
-        // Try to fetch the original alert by event_id (may not exist)
-        if (alert.event_id) {
-          try {
-            const data = await api.get(`/alerts/${alert.event_id}`) as any;
-            setDetailData(data);
-          } catch (err: any) {
-            // If original alert not found, fall back to patient alert details
-            setDetailData({
-              id: alert.id,
-              patient_name: alert.patient_name,
-              title: alert.title,
-              message: alert.message,
-              alert_type: alert.alert_type,
-              priority: alert.priority,
-              status: alert.status,
-              voice_transcription: alert.voice_transcription,
-              created_at: alert.created_at,
-            });
-          }
-        } else {
-          setDetailData({
-            id: alert.id,
-            patient_name: alert.patient_name,
-            title: alert.title,
-            message: alert.message,
-            alert_type: alert.alert_type,
-            priority: alert.priority,
-            status: alert.status,
-            voice_transcription: alert.voice_transcription,
-            created_at: alert.created_at,
-          });
-        }
-      } else {
-        const data = await api.get(`/alerts/${alert.id}`) as any;
-        setDetailData(data);
-      }
+      setDetailData({
+        id: alert.id,
+        patient_name: alert.patient_name,
+        title: alert.title,
+        message: alert.message,
+        alert_type: alert.alert_type,
+        priority: alert.priority,
+        status: alert.status,
+        voice_transcription: alert.voice_transcription,
+        created_at: alert.created_at,
+      });
     } finally {
       setLoadingDetail(false);
     }
-  };
-
-  const getAlertStyle = (source?: string) => {
-    if (source === 'budii') {
-      return { bg: "bg-destructive/10", icon: "text-destructive", itemBg: "bg-destructive/[0.08]", border: "border-l-destructive" };
-    }
-    return { bg: "bg-primary/10", icon: "text-primary", itemBg: "bg-primary/[0.06]", border: "border-l-primary/50" };
   };
 
   return (
@@ -138,7 +113,7 @@ export const NotificationDropdown = ({
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div className="absolute right-0 top-10 z-50 w-80 overflow-hidden rounded-2xl border border-border/60 bg-background/95 shadow-lg backdrop-blur-sm">
-            <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
+            <div className="flex items-center justify-between border-b border-border/60 px-4 py-2.5">
               <span className="text-sm font-semibold">Notifications</span>
               <div className="flex items-center gap-2">
                 {unread > 0 && (
@@ -154,36 +129,61 @@ export const NotificationDropdown = ({
                 )}
               </div>
             </div>
-            <div className="max-h-80 overflow-y-auto divide-y divide-border">
-              {alerts.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-10 gap-2 text-muted-foreground">
-                  <CheckCircle className="w-7 h-7" />
-                  <p className="text-sm">All clear!</p>
+            <div className="border-b border-border/60 px-2 py-1.5">
+              <div className="flex items-center gap-1 overflow-x-auto">
+                {ALERT_TABS.map((tab) => {
+                  const IconComponent = {
+                    Activity,
+                    AlertTriangle,
+                    MapPin,
+                    Pill,
+                    Clock,
+                  }[tab.icon] as React.ComponentType<{ className?: string }>;
+                  return (
+                    <button
+                      key={tab.key}
+                      className={`flex items-center gap-1 rounded-full px-2 py-1 text-[11px] whitespace-nowrap transition-colors ${activeTab === tab.key ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"}`}
+                      onClick={() => setActiveTab(tab.key)}
+                      title={tab.label}
+                    >
+                      {IconComponent && <IconComponent className="w-3 h-3" />}
+                      <span className="text-[10px] leading-none">{tabCounts[tab.key]}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="max-h-72 overflow-y-auto divide-y divide-border">
+              {filteredAlerts.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-8 gap-1 text-muted-foreground">
+                  <CheckCircle className="w-6 h-6" />
+                  <p className="text-xs">No alerts in this category.</p>
                 </div>
               ) : (
-                alerts.slice(0, 8).map(alert => {
-                  const s = getAlertStyle(alert.source);
-                  const isBudii = alert.source === 'budii';
+                filteredAlerts.slice(0, 10).map(alert => {
+                  const style = getAlertVisualStyle(alert);
                   const isUnread = !alert.is_read;
+
                   return (
                     <div
                       key={alert.id}
-                      className={`flex cursor-pointer items-start gap-3 border-l-2 px-4 py-3 transition-colors ${s.itemBg} ${s.border} hover:opacity-90`}
+                      className={`cursor-pointer border-l-4 px-3 py-2 transition-colors ${style.container} hover:opacity-90`}
                       onClick={() => handleAlertClick(alert)}
                     >
-                      <div className={`mt-0.5 w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${s.bg}`}>
-                        <AlertCircle className={`w-3.5 h-3.5 ${s.icon}`} />
+                      <div className="flex items-center gap-2.5">
+                        <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${style.iconWrap}`}>
+                          <AlertCircle className={`w-3.5 h-3.5 ${style.icon}`} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-xs truncate ${isUnread ? 'font-semibold' : 'font-medium text-muted-foreground'}`}>
+                            {(alert.patient_name ?? "Patient") + " - " + alert.title}
+                          </p>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground shrink-0">{formatRelativeTime(alert.created_at)}</p>
+                        {isUnread && (
+                          <div className={`w-2 h-2 rounded-full shrink-0 ${style.accentDot}`} />
+                        )}
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className={`text-xs truncate ${isUnread ? 'font-bold' : 'font-normal text-muted-foreground'}`}>
-                          {alert.patient_name ?? "Patient"} — {alert.title}
-                          {isBudii && <span className="text-destructive font-bold ml-1">●</span>}
-                        </p>
-                        <p className="text-[11px] text-muted-foreground mt-0.5">{formatRelativeTime(alert.created_at)}</p>
-                      </div>
-                      {isUnread && (
-                        <div className="w-2 h-2 rounded-full bg-primary shrink-0 mt-1.5" />
-                      )}
                     </div>
                   );
                 })

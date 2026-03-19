@@ -6,8 +6,11 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.auth import get_current_user
+from app.models.geofence_breach_event import GeofenceBreachEvent
+from app.models.patient_alert import PatientAlert
 from app.models.user import User
-from app.models.alert import Alert
+from app.services.firebase_helper import push_patient_alert
+from app.services.patient_alert_relationship_service import create_patient_alert_relationships
 from app.utils.geofence import haversine_distance, evaluate_geofence_state, is_point_in_polygon
 
 
@@ -191,30 +194,40 @@ def check_location(
     
     # Send exit alert
     if should_alert and can_alert:
-        alert = Alert(
+        breach = GeofenceBreachEvent(
             patient_id=uuid.UUID(patient_id),
-            type="geofence_exit",
-            title="Patient Left Safe Zone",
-            message=f"Patient has exited the safe zone boundary",
-            severity="high",
-            is_read=False,
+            latitude=latitude,
+            longitude=longitude,
+            distance_meters=distance,
+            is_patient_alert=True,
         )
-        db.add(alert)
+        db.add(breach)
+        db.flush()
+
+        patient_alert = PatientAlert(
+            patient_id=uuid.UUID(patient_id),
+            event_id=str(breach.id),
+            case="GEOFENCE_BREACH",
+            title="Geofence Breach Detected",
+            alert_type="GEOFENCE_BREACH",
+            message="Patient exited geofence boundary",
+            status="active",
+            source="geofence",
+        )
+        db.add(patient_alert)
+        db.flush()
+        create_patient_alert_relationships(db, patient_alert.id, uuid.UUID(patient_id))
+
+        pa_dict = patient_alert.to_dict()
+        pa_dict["patient_name"] = patient.full_name if patient else "Unknown"
+        push_patient_alert(pa_dict)
+
         patient.geofence_last_alert = datetime.now(timezone.utc)
         alert_sent = True
         alert_type = "exit"
     
     # Send re-entry notification
     if should_re_enter and can_alert:
-        alert = Alert(
-            patient_id=uuid.UUID(patient_id),
-            type="geofence_reentry",
-            title="Patient Returned to Safe Zone",
-            message=f"Patient has returned to the safe zone",
-            severity="info",
-            is_read=False,
-        )
-        db.add(alert)
         patient.geofence_last_alert = datetime.now(timezone.utc)
         alert_sent = True
         alert_type = "reentry"

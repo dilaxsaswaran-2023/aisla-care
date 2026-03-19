@@ -5,8 +5,11 @@ from typing import List
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models.budii_alert import PatientAlert
+from app.models.patient_alert import PatientAlert
+from app.models.user import User
 from app.services.audit_log_service import log_audit_event
+from app.services.firebase_helper import push_patient_alert
+from app.services.patient_alert_relationship_service import create_patient_alert_relationships
 
 logger = logging.getLogger("aisla.budii")
 
@@ -58,20 +61,30 @@ async def receive_budii_alert(
 
     created_alerts = []
     sio = request.app.state.sio
+    patient_user = db.query(User).filter(User.id == payload.patient_id).first()
 
     for action in payload.actions:
         new_alert = PatientAlert(
             patient_id=payload.patient_id,
             event_id=payload.event_id,
+            case=action.case,
+            title=f"Budii Alert - {action.case}",
             alert_type=action.case,
-            
+            message=action.reason,
+            status="active",
+            source="budii",
         )
         if action.case != "SOS_TRIGGER":    
             db.add(new_alert)
             db.flush()
 
+            create_patient_alert_relationships(db, new_alert.id, payload.patient_id)
+
             alert_data = new_alert.to_dict()
+            alert_data["patient_name"] = patient_user.full_name if patient_user else "Unknown"
             created_alerts.append(alert_data)
+
+            push_patient_alert(alert_data)
 
             await sio.emit("new_alert", alert_data)
 

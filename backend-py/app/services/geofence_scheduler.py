@@ -8,16 +8,14 @@ from datetime import datetime, timezone
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from app.database import SessionLocal
-from app.models.user import User
+from app.models.patient_alert import PatientAlert
 from app.models.patient_location import PatientCurrentLocation
-from app.models.budii_alert import PatientAlert
+from app.models.user import User
 from app.services.monitor.schemas import MonitorEvent
 from app.services.monitor.checks.check_geofence import check_geofence
-from app.services.budii_alert_relationship_service import create_budii_alert_relationships
-from app.services.alert_relationship_service import create_alert_relationships
-from app.models.alert import Alert
 from app.models.geofence_breach_event import GeofenceBreachEvent
 from app.services.firebase_helper import push_patient_alert
+from app.services.patient_alert_relationship_service import create_patient_alert_relationships
 
 logger = logging.getLogger("geofence.scheduler")
 
@@ -82,49 +80,35 @@ def run_geofence_check_for_all_patients():
                         latitude=location.lat,
                         longitude=location.lng,
                         distance_meters=rule.get("context", {}).get("distance_meters"),
+                        is_patient_alert=True,
                         breached_at=datetime.now(timezone.utc),
                     )
                     db.add(breach)
                     db.flush()
                     logger.info(f"[GEOFENCE_SCHEDULER] Step 1 OK - breach.id={breach.id}")
 
-                    logger.info("[GEOFENCE_SCHEDULER] Step 2 - creating alert")
-                    alert = Alert(
-                        patient_id=patient.id,
-                        alert_type="geofence",
-                        status="active",
-                        priority="high",
-                        title="Geofence Boundary Breach",
-                        message=rule.get("reason", "Patient outside home boundary"),
-                        latitude=location.lat,
-                        longitude=location.lng,
-                        is_added_to_emergency=True,
-                    )
-                    db.add(alert)
-                    db.flush()
-                    logger.info(f"[GEOFENCE_SCHEDULER] Step 2 OK - alert.id={alert.id}")
-
-                    logger.info("[GEOFENCE_SCHEDULER] Step 3 - creating alert relationships")
-                    create_alert_relationships(db, alert.id, patient.id)
-                    logger.info("[GEOFENCE_SCHEDULER] Step 3 OK")
-
-                    logger.info("[GEOFENCE_SCHEDULER] Step 4 - creating patient_alert")
+                    logger.info("[GEOFENCE_SCHEDULER] Step 2 - creating patient_alert")
                     patient_alert = PatientAlert(
                         patient_id=patient.id,
                         event_id=str(breach.id),
+                        case=rule["case"],
+                        title="Geofence Breach Detected",
                         alert_type=rule["case"],
+                        message=rule.get("reason", "Geofence boundary breach detected"),
+                        status="active",
+                        source="geofence",
                     )
                     db.add(patient_alert)
                     db.flush()
-                    logger.info(f"[GEOFENCE_SCHEDULER] Step 4 OK - patient_alert.id={patient_alert.id}")
+                    logger.info(f"[GEOFENCE_SCHEDULER] Step 2 OK - patient_alert.id={patient_alert.id}")
 
-                    logger.info("[GEOFENCE_SCHEDULER] Step 5 - creating budii alert relationships")
-                    create_budii_alert_relationships(db, patient_alert.id, patient.id)
-                    logger.info("[GEOFENCE_SCHEDULER] Step 5 OK")
+                    logger.info("[GEOFENCE_SCHEDULER] Step 3 - creating budii alert relationships")
+                    create_patient_alert_relationships(db, patient_alert.id, patient.id)
+                    logger.info("[GEOFENCE_SCHEDULER] Step 3 OK")
 
-                    logger.info("[GEOFENCE_SCHEDULER] Step 6 - commit")
+                    logger.info("[GEOFENCE_SCHEDULER] Step 4 - commit")
                     db.commit()
-                    logger.info("[GEOFENCE_SCHEDULER] Step 6 OK - commit success")
+                    logger.info("[GEOFENCE_SCHEDULER] Step 4 OK - commit success")
 
                     db.refresh(patient_alert)
 

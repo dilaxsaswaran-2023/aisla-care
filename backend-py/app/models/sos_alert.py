@@ -19,7 +19,9 @@ class SosAlert(Base):
     message = Column(Text, nullable=True)
 
     is_read = Column(Boolean, nullable=False, default=False, server_default="false")
-    # is_acknowledged = Column(Boolean, nullable=False, default=False, server_default="false")
+    is_patient_alert = Column(Boolean, nullable=False, default=False, server_default="false")
+    is_acknowledged = Column(Boolean, nullable=False, default=False, server_default="false")
+    acknowledged_via = Column(String, nullable=True)
 
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
@@ -33,7 +35,9 @@ class SosAlert(Base):
             "priority": self.priority,
             "message": self.message,
             "is_read": self.is_read,
-            # "is_acknowledged": self.is_acknowledged,
+            "is_patient_alert": self.is_patient_alert,
+            "is_acknowledged": self.is_acknowledged,
+            "acknowledged_via": self.acknowledged_via,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }

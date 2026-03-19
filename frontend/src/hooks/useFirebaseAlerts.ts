@@ -3,15 +3,14 @@ import {
   collection,
   query,
   where,
-  orderBy,
   onSnapshot,
-  Timestamp,
 } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { db, ensureFirebaseAuthReady } from "@/lib/firebase";
 import { parseDateTime } from "@/lib/datetime";
 
 export interface FirebasePatientAlert {
   id: string;
+  patient_alert_id?: string;
   patient_id: string;
   patient_name?: string;
   event_id: string;
@@ -38,59 +37,73 @@ export function useFirebaseAlerts(patientIds: string[]) {
   const initialLoadDone = useRef(false);
 
   useEffect(() => {
-    if (!patientIds.length) {
-      return;
-    }
+    if (!patientIds.length) return;
 
-    // Firestore "in" queries support max 30 values; chunk if needed
-    const chunks: string[][] = [];
-    for (let i = 0; i < patientIds.length; i += 30) {
-      chunks.push(patientIds.slice(i, i + 30));
-    }
+    let disposed = false;
+    const unsubscribers: Array<() => void> = [];
 
-    const unsubscribers: (() => void)[] = [];
+    const start = async () => {
+      await ensureFirebaseAuthReady();
+      if (disposed) return;
 
-    for (const chunk of chunks) {
-      const q = query(
-        collection(db, "patient_alerts"),
-        where("patient_id", "in", chunk)
-        // Temporarily removed orderBy to avoid index requirement
-        // Will add back after index is built: orderBy("created_at", "desc")
-      );
+      // Firestore "in" queries support max 30 values; chunk if needed
+      const chunks: string[][] = [];
+      for (let i = 0; i < patientIds.length; i += 30) {
+        chunks.push(patientIds.slice(i, i + 30));
+      }
 
-      const unsub = onSnapshot(
-        q,
-        (snapshot) => {
-          let docs: FirebasePatientAlert[] = snapshot.docs.map((d) => ({
-            id: d.id,
-            ...(d.data() as Omit<FirebasePatientAlert, "id">),
-          }));
-          
-          // Sort by created_at in memory (since orderBy is temporarily removed)
-          docs.sort((a, b) => (parseDateTime(b.created_at)?.getTime() || 0) - (parseDateTime(a.created_at)?.getTime() || 0));
+      for (const chunk of chunks) {
+        const q = query(
+          collection(db, "patient_alerts"),
+          where("patient_id", "in", chunk)
+        );
 
-          setAlerts(docs);
+        const unsub = onSnapshot(
+          q,
+          (snapshot) => {
+            let docs: FirebasePatientAlert[] = snapshot.docs.map((d) => {
+              const data = d.data() as Record<string, unknown>;
+              return {
+                ...(data as Omit<FirebasePatientAlert, "id">),
+                id: d.id,
+                patient_alert_id: String((data as any).patient_alert_id || d.id),
+              };
+            });
 
-          // Only fire latestAlert for *new* docs arriving after initial load
-          if (initialLoadDone.current) {
-            for (const change of snapshot.docChanges()) {
-              if (change.type === "added") {
-                const data = change.doc.data() as Omit<FirebasePatientAlert, "id">;
-                setLatestAlert({ id: change.doc.id, ...data });
-                break; // only toast for the first new one per batch
+            // Sort by created_at in memory (since orderBy is temporarily removed)
+            docs.sort((a, b) => (parseDateTime(b.created_at)?.getTime() || 0) - (parseDateTime(a.created_at)?.getTime() || 0));
+
+            setAlerts(docs);
+
+            // Only fire latestAlert for *new* docs arriving after initial load.
+            // This avoids replaying older emergency alerts after page refresh.
+            if (initialLoadDone.current) {
+              for (const change of snapshot.docChanges()) {
+                if (change.type === "added") {
+                  const data = change.doc.data() as Record<string, unknown>;
+                  setLatestAlert({
+                    ...(data as Omit<FirebasePatientAlert, "id">),
+                    id: change.doc.id,
+                    patient_alert_id: String((data as any).patient_alert_id || change.doc.id),
+                  });
+                  break; // only toast for the first new one per batch
+                }
               }
             }
+            initialLoadDone.current = true;
+          },
+          (error) => {
+            console.error("[Firebase] patient_alerts listener failed:", error);
           }
-          initialLoadDone.current = true;
-        },
-        () => {
-          // Listener error - silently handled
-        }
-      );
-      unsubscribers.push(unsub);
-    }
+        );
+        unsubscribers.push(unsub);
+      }
+    };
+
+    void start();
 
     return () => {
+      disposed = true;
       unsubscribers.forEach((u) => u());
     };
   }, [patientIds.join(",")]);

@@ -8,6 +8,7 @@ import {
 import PortalLayout from "@/components/layout/PortalLayout";
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
+import { useToast } from "@/hooks/use-toast";
 import { CaregiverOverview } from "@/components/caregiver/CaregiverOverview";
 import { CaregiverPatients } from "@/components/caregiver/CaregiverPatients";
 import { CaregiverMessages } from "@/components/caregiver/CaregiverMessages";
@@ -35,6 +36,7 @@ interface Conversation {
 }
 interface AlertItem {
   id: string;
+  patient_alert_id?: string | null;
   alert_type: string;
   status: string;
   priority: string;
@@ -42,11 +44,16 @@ interface AlertItem {
   message: string;
   voice_transcription?: string;
   patient_name?: string;
+  patient_id?: string;
   event_id?: string;
   created_at: string;
   source?: string; // 'normal' or 'budii'
   is_read?: boolean;
   is_added_to_emergency?: boolean;
+  is_acknowledged?: boolean;
+  acknowledged_via?: string | null;
+  patient_phone_country?: string | null;
+  patient_phone_number?: string | null;
 }
 
 const navItems = [
@@ -54,13 +61,14 @@ const navItems = [
   { label: "Patients", value: "patients", icon: Users },
   { label: "Messages", value: "messages", icon: MessageSquare },
   { label: "Location", value: "map", icon: MapPin },
-  { label: "Tasks", value: "tasks", icon: Calendar },
+  { label: "Schedules", value: "schedules", icon: Calendar },
   { label: "Alerts", value: "alerts", icon: AlertCircle },
 ];
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 const Caregiver = () => {
   const { user } = useAuth();
+  const { toast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
   const isMobile = useIsMobile();
@@ -70,14 +78,15 @@ const Caregiver = () => {
   const [messageContacts, setMessageContacts] = useState<MessageContact[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
-  const [budiiAlerts, setBudiiAlerts] = useState<AlertItem[]>([]);
   const [loadingAlerts, setLoadingAlerts] = useState(true);
   const [emergencyBannerVisible, setEmergencyBannerVisible] = useState(true);
   const [loading, setLoading] = useState(true);
+  const [selectedMessageContactId, setSelectedMessageContactId] = useState<string>("");
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
-    setActiveTab(params.get('tab') || 'overview');
+    const rawTab = params.get('tab') || 'overview';
+    setActiveTab(rawTab === 'tasks' ? 'schedules' : rawTab);
   }, [location.search]);
 
   const handleTabChange = (tab: string) => navigate(`?tab=${tab}`, { replace: true });
@@ -91,18 +100,14 @@ const Caregiver = () => {
   const loadAlerts = async () => {
     setLoadingAlerts(true);
     try {
-      // Fetch normal alerts
-      const normalData = await api.get('/alerts/me') as AlertItem[];
-      const normalAlerts = (normalData || []).map(a => ({ ...a, source: 'normal' }));
-      setAlerts(normalAlerts);
-      
-      // Fetch budii alerts (serious ones)
-      const budiiData = await api.get('/budii-alerts/me') as AlertItem[];
-      const budiiAlertsWithSource = (budiiData || []).map(a => ({ ...a, source: 'budii' }));
-      setBudiiAlerts(budiiAlertsWithSource);
+      const data = await api.get('/alerts/me') as any[];
+      const normalized = (data || []).map((a) => ({
+        ...a,
+        is_read: Boolean(a?.is_read ?? a?.isRead ?? a?.isread ?? false),
+      }));
+      setAlerts(normalized);
     } catch {
       setAlerts([]);
-      setBudiiAlerts([]);
     }
     setLoadingAlerts(false);
   };
@@ -163,20 +168,47 @@ const Caregiver = () => {
 
   const handleMarkAllRead = async () => {
     try {
-      await Promise.all([
-        api.patch('/alerts/mark-read-all'),
-        api.patch('/budii-alerts/mark-read-all'),
-      ]);
+      await api.patch('/alerts/mark-read-all');
       setAlerts(prev => prev.map(a => ({ ...a, is_read: true })));
-      setBudiiAlerts(prev => prev.map(a => ({ ...a, is_read: true })));
     } catch { /* non-critical */ }
   };
 
   const handleAlertRead = (alertId: string, source: string) => {
-    if (source === 'budii') {
-      setBudiiAlerts(prev => prev.map(a => a.id === alertId ? { ...a, is_read: true } : a));
-    } else {
-      setAlerts(prev => prev.map(a => a.id === alertId ? { ...a, is_read: true } : a));
+    setAlerts(prev => prev.map(a => a.id === alertId ? { ...a, is_read: true } : a));
+  };
+
+  const handleAcknowledgeEmergency = async (alert: AlertItem, how: string) => {
+    const patientAlertId = alert?.patient_alert_id || null;
+    if (!patientAlertId) {
+      toast({
+        title: "Acknowledge unavailable",
+        description: "This alert does not have a linked patient_alert record.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      await api.patch(`/patient_alert/${patientAlertId}/acknowledge`, { how });
+      setAlerts((prev) =>
+        prev.map((a) =>
+          (a.patient_alert_id || null) === patientAlertId
+            ? { ...a, is_acknowledged: true, acknowledged_via: how }
+            : a
+        )
+      );
+      setEmergencyBannerVisible(false);
+      clearLatest();
+      toast({
+        title: "Emergency acknowledged",
+        description: `Saved as ${how.replace("_", " ")}`,
+      });
+    } catch {
+      toast({
+        title: "Acknowledge failed",
+        description: "Could not save acknowledgement. Please try again.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -190,22 +222,37 @@ const Caregiver = () => {
   // Filter Firebase alert for banner display (only SOS and geofence breach)
   const firebaseEmergencyAlert = useMemo(() => {
     if (!latestAlert) return null;
-    // accept 'sos' and the geofence alert types
-    const isEmergency = latestAlert.alert_type === 'sos' || latestAlert.alert_type === 'geofence' || latestAlert.alert_type === 'geofence_breach';
+    const type = String(latestAlert.alert_type || '').toLowerCase();
+    const title = String((latestAlert as any).title || '').toLowerCase();
+    const source = String((latestAlert as any).source || '').toLowerCase();
+    const isEmergency =
+      source === 'budii' ||
+      type.includes('sos') ||
+      type.includes('geofence') ||
+      title.includes('sos') ||
+      title.includes('geofence');
     if (!isEmergency) return null;
     // map Firebase alert shape to AlertItem shape expected by EmergencyBanner
     const la: any = latestAlert as any;
+    // Try to find patient_id by matching patient_name with patients list
+    const matchedPatient = patients.find(p => p.name === la.patient_name);
     return {
       id: la.id || String(Date.now()),
-      alert_type: la.alert_type || 'sos',
+      patient_alert_id: la.patient_alert_id || la.id || null,
+      alert_type: la.alert_type || "sos",
       status: la.status || 'active',
       priority: la.priority || 'high',
       title: la.title || 'Emergency',
       message: la.message || '',
       voice_transcription: la.voice_transcription,
       patient_name: la.patient_name || '',
+      patient_id: la.patient_id || matchedPatient?.id || '',
+      patient_phone_country: la.patient_phone_country || null,
+      patient_phone_number: la.patient_phone_number || null,
+      is_acknowledged: Boolean(la.is_acknowledged),
+      acknowledged_via: la.acknowledged_via || null,
       created_at: la.created_at || new Date().toISOString(),
-      source: 'firebase',
+      source: la.source || "sos",
     } as any;
   }, [latestAlert]);
 
@@ -214,7 +261,7 @@ const Caregiver = () => {
     patients: { title: "Patients", desc: "Manage and monitor assigned patients" },
     messages: { title: "Messages", desc: "Communicate with patients and families" },
     map: { title: "Location Tracking", desc: "GPS monitoring of patient locations" },
-    tasks: { title: "Tasks & Reminders", desc: "Schedule and manage patient activities" },
+    schedules: { title: "Medication Schedules", desc: "View patient schedules and daily medication status" },
     alerts: { title: "Alerts", desc: "Monitor and respond to patient alerts" },
   };
   const current = pageTitles[activeTab] ?? pageTitles.overview;
@@ -240,7 +287,7 @@ const Caregiver = () => {
             <RefreshCw className="w-4 h-4" />
             {!isMobile && <span className="hidden sm:inline text-xs">Refresh</span>}
           </Button>
-          <NotificationDropdown alerts={[...budiiAlerts, ...alerts]} isMobile={isMobile} onMarkAllRead={handleMarkAllRead} onAlertRead={handleAlertRead} />
+          <NotificationDropdown alerts={alerts} isMobile={isMobile} onMarkAllRead={handleMarkAllRead} onAlertRead={handleAlertRead} />
         </div>
       }
     >
@@ -248,6 +295,14 @@ const Caregiver = () => {
         <div className="mb-4 gentle-fade-in">
           <EmergencyBanner
             alert={firebaseEmergencyAlert}
+            onAcknowledge={(how) => handleAcknowledgeEmergency(firebaseEmergencyAlert as AlertItem, how)}
+            onOpenMessages={() => handleTabChange("messages")}
+            onOpenMessageWith={(partnerId) => { 
+              setSelectedMessageContactId(partnerId);
+              handleTabChange("messages"); 
+            }}
+            messageContacts={messageContacts}
+            userRole={user?.role || ""}
             onClose={() => { setEmergencyBannerVisible(false); clearLatest(); }}
           />
         </div>
@@ -256,7 +311,7 @@ const Caregiver = () => {
         <CaregiverOverview
           patients={patients}
           alerts={alerts}
-          budiiAlerts={budiiAlerts}
+          budiiAlerts={[]}
           loading={loading}
           loadingAlerts={loadingAlerts}
           onTabChange={handleTabChange}
@@ -270,13 +325,15 @@ const Caregiver = () => {
           conversations={conversations}
           loading={loading}
           onLoadConversations={loadConversations}
+          selectedContactId={selectedMessageContactId}
+          onContactSelected={() => setSelectedMessageContactId("")}
         />
       )}
       {activeTab === "map" && <CaregiverLocation />}
-      {activeTab === "tasks" && <CaregiverTasks />}
+      {activeTab === "schedules" && <CaregiverTasks patients={patients} />}
       {activeTab === "alerts" && (
         <CaregiverAlerts
-          alerts={[...budiiAlerts, ...alerts]}
+          alerts={alerts}
           loadingAlerts={loadingAlerts}
           onRefresh={onRefresh}
         />

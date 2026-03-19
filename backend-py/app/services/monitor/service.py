@@ -4,11 +4,9 @@ import uuid
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.models.alert import Alert
-from app.models.budii_alert import PatientAlert
-from app.services.alert_relationship_service import create_alert_relationships
-from app.services.budii_alert_relationship_service import create_budii_alert_relationships
 from app.services.firebase_helper import push_patient_alert
+from app.models.patient_alert import PatientAlert
+from app.services.patient_alert_relationship_service import create_patient_alert_relationships
 from app.services.monitor.schemas import MonitorEvent
 from app.services.monitor.checks.check_sos import check_sos
 from app.services.monitor.checks.check_geofence import check_geofence
@@ -30,20 +28,12 @@ def _case_to_alert_type(case: str) -> str:
     return "health"
 
 
-def _case_to_priority(case: str) -> str:
-    if case in ("SOS_REPEAT", "START_EMERGENCY"):
-        return "critical"
-    if "SOS" in case or "GEOFENCE" in case:
-        return "high"
-    return "medium"
-
-
 async def process_event(event: MonitorEvent, db: Session, sio=None) -> list:
     """
     ⚠️  DEPRECATED - No longer used in the main application flow.
     
     This function was the main event processor before we refactored to independent checks:
-    - SOS checks are now triggered directly via check_sos_direct() in /api/alerts/sos endpoint
+    - SOS checks are now triggered directly via /api/sos-alerts endpoint
     - Geofence checks run independently via geofence_scheduler every 60 seconds
     
     Keeping for backward compatibility with external integrations or testing.
@@ -74,46 +64,32 @@ async def process_event(event: MonitorEvent, db: Session, sio=None) -> list:
         alert_type = _case_to_alert_type(rule["case"])
 
         # ── PatientAlert: audit log entry (skip SOS_TRIGGER, only log SOS_REPEAT) ───
-        # SOS_TRIGGER: initial SOS alert already created by /api/alerts/sos endpoint
+        # SOS_TRIGGER: initial SOS alert already created by /api/sos-alerts endpoint
         # SOS_REPEAT: escalation within 8 min, should be logged in patient_alerts + create relationships
         if rule["case"] == "SOS_REPEAT":
             patient_alert = PatientAlert(
                 patient_id=patient_uuid,
                 event_id=event.event_id,
                 case=rule["case"],
-                alert_type=alert_type,
                 title=rule["reason"],
-                message=rule.get("reason", ""),
+                alert_type=alert_type,
+                message=rule.get("reason"),
                 status="active",
                 source="monitor",
             )
             db.add(patient_alert)
             db.flush()  # Get patient_alert.id before creating relationships
             # Create budii alert relationships for all caregivers and family members
-            print(f"[MONITOR] About to create_budii_alert_relationships for patient_alert.id={patient_alert.id}, patient_uuid={patient_uuid}")
-            result = create_budii_alert_relationships(db, patient_alert.id, patient_uuid)
-            print(f"[MONITOR] create_budii_alert_relationships returned: {result}")
+            print(f"[MONITOR] About to create_patient_alert_relationships for patient_alert.id={patient_alert.id}, patient_uuid={patient_uuid}")
+            result = create_patient_alert_relationships(db, patient_alert.id, patient_uuid)
+            print(f"[MONITOR] create_patient_alert_relationships returned: {result}")
 
             # Push to Firebase for real-time frontend listeners
             push_patient_alert(patient_alert.to_dict())
 
-        # ── For non-SOS rules, create a user-visible Alert + relationships ────
-        # (SOS alert is already created by the /api/alerts/sos endpoint)
-        if "SOS" not in rule["case"]:
-            context = rule.get("context") or {}
-            alert = Alert(
-                patient_id=patient_uuid,
-                alert_type=alert_type,
-                status="active",
-                priority=_case_to_priority(rule["case"]),
-                title=rule["reason"],
-                message=rule.get("reason", ""),
-                latitude=event.lat,
-                longitude=event.lng,
-            )
-            db.add(alert)
-            db.flush()  # get alert.id before creating relationships
-            create_alert_relationships(db, alert.id, patient_uuid)
+        # Non-SOS events are now surfaced by their dedicated event tables
+        # (geofence_breach_events, medication_schedules_breach, patient_inactivity_logs).
+        # They are merged in /api/alerts/me without creating legacy Alert rows.
 
     print(f"[MONITOR] About to commit database changes. Rules processed: {len(all_rules)}")
     db.commit()

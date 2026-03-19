@@ -128,7 +128,7 @@ const SOSPopup = ({ isOpen, onClose }: SOSPopupProps) => {
     try {
       const finalTranscription = transcriptionRef.current.trim();
       
-      await api.post("/alerts/sos", {
+      await api.post("/sos-alerts", {
         voice_transcription: finalTranscription || null,
       });
 

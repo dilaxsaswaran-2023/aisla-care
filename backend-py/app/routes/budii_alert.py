@@ -4,12 +4,13 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models.budii_alert import PatientAlert
-from app.models.budii_alert_relationship import BudiiAlertRelationship
+from app.models.patient_alert import PatientAlert
+from app.models.patient_alert_relationship import BudiiAlertRelationship
 from app.models.user import User
 from app.auth import get_current_user
 from app.services.budii_alert_relationship_service import create_budii_alert_relationships
 from app.services.audit_log_service import log_audit_event, build_field_changes
+from app.services.firebase_helper import push_patient_alert
 
 router = APIRouter(prefix="/api/budii-alerts", tags=["budii-alerts"])
 
@@ -116,7 +117,12 @@ def create_budii_alert(
     alert = PatientAlert(
         patient_id=patient_id,
         event_id=str(uuid.uuid4()),
+        case=body.case,
+        title=body.title,
         alert_type=body.case,
+        message=body.message,
+        status=body.status,
+        source=body.source,
     )
     db.add(alert)
     db.commit()
@@ -141,8 +147,13 @@ def create_budii_alert(
     # Create alert relationships for all caregivers and family members
     relationships = create_budii_alert_relationships(db, alert.id, patient_id)
 
+    patient = db.query(User).filter(User.id == alert.patient_id).first()
+    alert_payload = alert.to_dict()
+    alert_payload["patient_name"] = patient.full_name if patient else "Unknown"
+    push_patient_alert(alert_payload)
+
     # Build response with alert and relationships
-    response = alert.to_dict()
+    response = alert_payload
     response["relationships"] = relationships
     
     return response

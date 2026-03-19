@@ -19,10 +19,11 @@ class SqlStep:
 
 
 DELETE_STEPS = [
-    SqlStep("budii_alert_relationships", "DELETE FROM budii_alert_relationships"),
+    SqlStep("patient_alert_relationships", "DELETE FROM patient_alert_relationships"),
     SqlStep("patient_alerts", "DELETE FROM patient_alerts"),
-    SqlStep("alert_relationships", "DELETE FROM alert_relationships"),
-    SqlStep("alerts", "DELETE FROM alerts"),
+    SqlStep("sos_alerts", "DELETE FROM sos_alerts"),
+    SqlStep("medication_schedule_breaches", "DELETE FROM medication_schedule_breaches"),
+    SqlStep("patient_inactivity_logs", "DELETE FROM patient_inactivity_logs"),
     SqlStep("geofence_breach_events", "DELETE FROM geofence_breach_events"),
 ]
 
@@ -44,10 +45,11 @@ SET
 """
 
 COUNT_TABLES = [
-    "alerts",
-    "alert_relationships",
+    "sos_alerts",
+    "medication_schedule_breaches",
+    "patient_inactivity_logs",
     "patient_alerts",
-    "budii_alert_relationships",
+    "patient_alert_relationships",
     "geofence_breach_events",
     "gps_locations",
     "patient_current_location",

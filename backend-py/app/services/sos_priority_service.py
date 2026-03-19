@@ -25,41 +25,55 @@ def get_sos_priority(transcription: str) -> str:
         client = get_azure_client()
 
         response = client.chat.completions.create(
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are an SOS priority classifier. Return exactly one word only: low, medium, or high.",
-                },
-                {
-                    "role": "user",
-                    "content": f"""
-Classify this elderly patient's SOS voice message.
+    messages=[
+        {
+            "role": "system",
+            "content": """
+You are classifying an elderly patient's SOS voice message for an emergency care system.
 
-Return only one word from:
+Return exactly one lowercase word only:
 low
 medium
 high
 
-Rules:
-- low: non-urgent question or simple request
-- medium: discomfort, dizziness, mild issue, but not immediate danger
-- high: urgent help needed, fall, serious distress, emergency-like situation
+Safety rule:
+When unsure, choose the HIGHER severity.
+This is a safety-critical elderly care context, so avoid false negatives.
+
+Classify as:
+low: non-urgent request, general question, casual assistance, no sign of distress or danger
+medium: mild discomfort, dizziness, confusion, weakness, feeling unwell, needs help soon but no clear immediate danger
+high: any possible emergency, immediate danger, fall, cannot get up, severe pain, chest pain, breathing trouble, fainting, bleeding, severe distress, calling for urgent help, repeated panic wording, or unclear message that may indicate danger
+
+Important rules:
+If the patient says they fell, might have fallen, slipped, cannot stand, or cannot get up -> high
+If the patient sounds distressed, afraid, panicked, or asks for urgent help -> high
+If there is chest pain, breathing difficulty, severe weakness, stroke-like symptoms, or loss of consciousness -> high
+If the message is incomplete, hard to understand, or ambiguous but could indicate danger -> high
+Polite wording does not reduce severity
+Only clear, harmless, non-urgent requests should be low
 
 Examples:
 "What should I eat?" -> low
+"Can you remind me about my medicine?" -> low
 "I feel dizzy" -> medium
+"I feel weak and not well" -> medium
 "I need help, I fell" -> high
 "I cannot get up" -> high
-"I have chest pain" -> high
-
-Message:
-\"\"\"{transcription}\"\"\"
+"My chest hurts" -> high
+"I can't breathe properly" -> high
+"Help me please" -> high
+"I don't know what's happening" -> high
 """.strip(),
-                }
-            ],
-            max_completion_tokens=200,
-            model=deployment,
-        )
+        },
+        {
+            "role": "user",
+            "content": f'Classify this SOS voice message:\n"""{transcription}"""',
+        },
+    ],
+    max_completion_tokens=200,
+    model=deployment,
+)
 
         result = (response.choices[0].message.content or "").strip().lower()
         logger.info(f"[SOS_PRIORITY] Azure OpenAI response='{result}'") 

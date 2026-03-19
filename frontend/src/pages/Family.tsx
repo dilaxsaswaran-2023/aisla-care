@@ -115,10 +115,15 @@ const Family = () => {
   // Filter Firebase alert for banner display (only SOS and geofence breach)
   const familyAlertBanner = useMemo(() => {
     if (!latestAlert) return null;
+    const type = String(latestAlert.alert_type || "").toLowerCase();
+    const title = String((latestAlert as any).title || "").toLowerCase();
+    const source = String((latestAlert as any).source || "").toLowerCase();
     const isEmergency =
-      latestAlert.alert_type === "sos" ||
-      latestAlert.alert_type === "geofence" ||
-      latestAlert.alert_type === "geofence_breach";
+      source === "budii" ||
+      type.includes("sos") ||
+      type.includes("geofence") ||
+      title.includes("sos") ||
+      title.includes("geofence");
     if (!isEmergency) return null;
     const la: any = latestAlert as any;
     return {

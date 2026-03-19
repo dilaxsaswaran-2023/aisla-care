@@ -11,7 +11,7 @@ from app.config import get_settings
 from app.database import engine, Base, SessionLocal
 from app.jwt_utils import init_jwt_secret
 from app.jwt_utils import verify_access_token
-from app.seeder import seed_super_admin, seed_patient_activity_schedule
+from app.seeder import seed_super_admin
 from app.services.geofence_scheduler import start_scheduler, stop_scheduler
 from app.services.human_detection_scheduler import start_human_detection_scheduler
 from app.services.inactivity_scheduler import start_inactivity_scheduler
@@ -25,6 +25,7 @@ setup_logging()
 from app.routes.auth import router as auth_router
 from app.routes.users import router as users_router
 from app.routes.alerts import router as alerts_router
+from app.routes.sos_alerts import router as sos_alerts_router
 from app.routes.devices import router as devices_router
 from app.routes.gps import router as gps_router
 from app.routes.messages import router as messages_router
@@ -38,6 +39,7 @@ from app.routes.budii import router as budii_router
 from app.routes.budii_alert import router as budii_alert_router
 from app.routes.monitor import router as monitor_router
 from app.routes.medication_schedules import router as medication_schedules_router
+from app.routes.patient_alert import router as patient_alert_router
 
 settings = get_settings()
 import logging
@@ -62,7 +64,6 @@ async def lifespan(app: FastAPI):
         try:
             init_jwt_secret(db)
             seed_super_admin(db)
-            seed_patient_activity_schedule(db)
         finally:
             db.close()
         logger.info("[DB] JWT secret and super-admin initialized")
@@ -312,6 +313,7 @@ app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(alerts_router)
+app.include_router(sos_alerts_router)
 app.include_router(devices_router)
 app.include_router(gps_router)
 app.include_router(messages_router)
@@ -325,6 +327,7 @@ app.include_router(budii_router)
 app.include_router(budii_alert_router)
 app.include_router(monitor_router)
 app.include_router(medication_schedules_router)
+app.include_router(patient_alert_router)
 
 # Health check
 @app.get("/api/health")

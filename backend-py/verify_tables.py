@@ -4,7 +4,7 @@ import sys
 sys.path.insert(0, 'd:/Senzmate/AISLA/aisla-care/backend-py')
 
 from app.database import SessionLocal
-from app.models import MedicationSchedule, PatientActiveHours, AgentEvent
+from app.models import MedicationSchedule, AgentEvent
 from sqlalchemy import inspect
 
 session = SessionLocal()
@@ -18,7 +18,6 @@ for t in sorted(tables):
 print('\n📋 Agent Tables Schema (Expected):')
 agent_tables = {
     'medication_schedules': MedicationSchedule,
-    'patient_active_hours': PatientActiveHours,
     'agent_events': AgentEvent,
 }
 
@@ -36,7 +35,6 @@ for table_name, model in agent_tables.items():
 print('\n🔧 Testing Model Imports:')
 try:
     print(f'  ✓ MedicationSchedule: {MedicationSchedule.__tablename__}')
-    print(f'  ✓ PatientActiveHours: {PatientActiveHours.__tablename__}')
     print(f'  ✓ AgentEvent: {AgentEvent.__tablename__}')
 except Exception as e:
     print(f'  ❌ Error: {e}')

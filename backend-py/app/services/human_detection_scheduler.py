@@ -14,7 +14,7 @@ scheduler = BackgroundScheduler()
 
 def get_demo_human_detection(patient: User) -> bool:
     current_minute = datetime.utcnow().minute
-    return current_minute % 2 == 0
+    return current_minute % 3 == 0
 
 
 def run_human_detection_check_for_all_patients():

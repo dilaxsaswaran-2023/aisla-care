@@ -2,7 +2,7 @@
 import uuid
 from sqlalchemy.orm import Session
 
-from app.models.budii_alert_relationship import BudiiAlertRelationship
+from app.models.patient_alert_relationship import BudiiAlertRelationship
 from app.models.relationship import Relationship
 
 
@@ -14,6 +14,10 @@ def create_budii_alert_relationships(
     """
     Create budii alert relationship records for all caregivers and family members
     associated with the patient.
+
+    The function now combines caregiver and family into the same row whenever
+    possible (index-based pairing), instead of always creating separate rows for
+    each role.
     
     Args:
         db: Database session
@@ -23,33 +27,41 @@ def create_budii_alert_relationships(
     Returns:
         List of created BudiiAlertRelationship records as dicts
     """
-    print(f"[BUDII_REL] create_budii_alert_relationships called: patient_alert_id={patient_alert_id}, patient_id={patient_id}")
-    
-    # Get all relationships for this patient
+    existing_rows = (
+        db.query(BudiiAlertRelationship)
+        .filter(BudiiAlertRelationship.patient_alert_id == patient_alert_id)
+        .all()
+    )
+    if existing_rows:
+        return [rel.to_dict() for rel in existing_rows]
+
     relationships = db.query(Relationship).filter(
         Relationship.patient_id == patient_id
     ).all()
-    
-    print(f"[BUDII_REL] Found {len(relationships)} relationships for patient_id={patient_id}")
-    
-    created_relationships = []
-    
-    for rel in relationships:
-        print(f"[BUDII_REL] Processing relationship: type={rel.relationship_type}, related_user_id={rel.related_user_id}")
-        # Determine which field to use (caregiver_id or family_id)
-        is_caregiver = rel.relationship_type == "caregiver"
-        
+
+    caregiver_ids = [
+        rel.related_user_id
+        for rel in relationships
+        if rel.relationship_type == "caregiver"
+    ]
+    family_ids = [
+        rel.related_user_id
+        for rel in relationships
+        if rel.relationship_type == "family"
+    ]
+
+    created_relationships: list[BudiiAlertRelationship] = []
+    row_count = max(len(caregiver_ids), len(family_ids))
+    for index in range(row_count):
         budii_alert_rel = BudiiAlertRelationship(
             patient_alert_id=patient_alert_id,
-            caregiver_id=rel.related_user_id if is_caregiver else None,
-            family_id=rel.related_user_id if not is_caregiver else None,
+            caregiver_id=caregiver_ids[index] if index < len(caregiver_ids) else None,
+            family_id=family_ids[index] if index < len(family_ids) else None,
         )
-        print(f"[BUDII_REL] Adding relationship: caregiver_id={budii_alert_rel.caregiver_id}, family_id={budii_alert_rel.family_id}")
         db.add(budii_alert_rel)
         created_relationships.append(budii_alert_rel)
-    
-    print(f"[BUDII_REL] Created {len(created_relationships)} relationship records")
-    # Note: Caller (service.py) will handle db.commit()
+
+    # Note: Caller will handle db.commit()
     return [rel.to_dict() for rel in created_relationships]
 
 

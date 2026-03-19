@@ -14,7 +14,7 @@ def monitor_status():
     """
     Returns the status of all monitoring checks.
     
-    - SOS: Event-driven via /api/alerts/sos endpoint
+    - SOS: Event-driven via /api/sos-alerts endpoint
     - Geofence: Scheduled independently every 60 seconds
     - Inactive: Not yet implemented
     - Medication: Scheduled independently every 30 minutes

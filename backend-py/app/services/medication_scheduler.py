@@ -5,15 +5,13 @@ from zoneinfo import ZoneInfo
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from app.database import SessionLocal
-from app.models.alert import Alert
-from app.models.budii_alert import PatientAlert
 from app.models.medication_schedule import MedicationSchedule
 from app.models.medication_schedule_breach import MedicationScheduleBreach
 from app.models.medication_schedule_monitor import MedicationScheduleMonitor
+from app.models.patient_alert import PatientAlert
 from app.models.user import User
-from app.services.alert_relationship_service import create_alert_relationships
-from app.services.budii_alert_relationship_service import create_budii_alert_relationships
 from app.services.firebase_helper import push_patient_alert
+from app.services.patient_alert_relationship_service import create_patient_alert_relationships
 
 logger = logging.getLogger("medication.scheduler")
 
@@ -148,31 +146,23 @@ def run_medication_check_for_all_patients():
                 db.add(breach)
                 db.flush()
 
-                alert_priority = "high" if schedule.urgency_level == "high" else "medium"
-                alert = Alert(
-                    patient_id=schedule.patient_id,
-                    alert_type="medication",
-                    status="active",
-                    priority=alert_priority,
-                    title="Medication Missed",
-                    message=reason,
-                    is_added_to_emergency=schedule.urgency_level == "high",
-                )
-                db.add(alert)
-                db.flush()
-
-                breach.alert_id = alert.id
-                create_alert_relationships(db, alert.id, schedule.patient_id)
+                breach.alert_id = None
 
                 if schedule.urgency_level == "high":
+                    breach.is_patient_alert = True
                     patient_alert = PatientAlert(
                         patient_id=schedule.patient_id,
                         event_id=str(breach.id),
+                        case="MEDICATION_MISSED_HIGH",
+                        title="High Priority Medication Alert",
                         alert_type="MEDICATION_MISSED_HIGH",
+                        message=reason,
+                        status="active",
+                        source="medication",
                     )
                     db.add(patient_alert)
                     db.flush()
-                    create_budii_alert_relationships(db, patient_alert.id, schedule.patient_id)
+                    create_patient_alert_relationships(db, patient_alert.id, schedule.patient_id)
 
                     db.commit()
                     db.refresh(patient_alert)

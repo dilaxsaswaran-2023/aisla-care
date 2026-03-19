@@ -12,7 +12,7 @@ if __name__ == '__main__':
         print('create_budii_alert_relationships returned:', created)
         db.commit()
         # Verify
-        from app.models.budii_alert_relationship import BudiiAlertRelationship
+        from app.models.patient_alert_relationship import BudiiAlertRelationship
         rows = db.query(BudiiAlertRelationship).filter(BudiiAlertRelationship.patient_alert_id == patient_alert_id).all()
         print('BudiiAlertRelationship rows now:', len(rows))
         for r in rows:

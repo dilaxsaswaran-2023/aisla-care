@@ -18,7 +18,7 @@ The monitoring system now uses **independent, specialized checks** rather than a
 │           ▲                               ▲                  │
 │           │                               │                  │
 │  ┌────────┴────────┐          ┌──────────┴──────────┐       │
-│  │POST /api/alerts/sos         │APScheduler Runs     │       │
+│  │POST /api/sos-alerts         │APScheduler Runs     │       │
 │  │Patient SOS button           │Every 60 seconds     │       │
 │  └─────────────────────────────────────────────────┘       │
 │                                                               │
@@ -26,9 +26,12 @@ The monitoring system now uses **independent, specialized checks** rather than a
 │  │         Database (PostgreSQL)                         │   │
 │  │  - users (patient geofence config)                   │   │
 │  │  - patient_current_location (latest location)        │   │
-│  │  - alerts (frontend-visible)                         │   │
-│  │  - patient_alerts (audit log)                        │   │
-│  │  - alert_relationships (caregiver links)             │   │
+│  │  - sos_alerts                                         │   │
+│  │  - geofence_breach_events                             │   │
+│  │  - medication_schedule_breaches                       │   │
+│  │  - patient_inactivity_logs                            │   │
+│  │  - patient_alerts (emergency queue)                   │   │
+│  │  - patient_alert_relationships (caregiver/family links)│   │
 │  └──────────────────────────────────────────────────────┘   │
 │                                                               │
 └─────────────────────────────────────────────────────────────┘
@@ -38,21 +41,21 @@ The monitoring system now uses **independent, specialized checks** rather than a
 
 ### 1. SOS Check (Event-Driven) ✅ Implemented
 
-**Trigger:** User presses emergency SOS button → `POST /api/alerts/sos`  
+**Trigger:** User presses emergency SOS button → `POST /api/sos-alerts`  
 **Frequency:** On-demand (when triggered)  
-**Implementation:** `app/routes/alerts.py` → `check_sos_direct()`
+**Implementation:** `app/routes/sos_alerts.py`
 
 **Flow:**
-1. Patient calls `/api/alerts/sos` endpoint with optional voice transcription
-2. Backend creates `Alert` record (alert_type="sos", priority="critical")
-3. Directly calls `check_sos_direct()` helper to determine if it's:
+1. Patient calls `/api/sos-alerts` endpoint with optional voice transcription
+2. Backend creates `SosAlert` record (priority based on SOS text)
+3. Determines if it's:
    - **SOS_TRIGGER**: First SOS or last SOS > 8 minutes ago → `action: SEND_CONFIRMATION`
    - **SOS_REPEAT**: Repeated SOS within 8 minutes → `action: START_EMERGENCY`
-4. Creates `alert_relationships` to notify caregivers/family
-5. Emits socket event `new_alert` with SOS result
-6. Returns response with `sos_result` in payload
+4. On repeat SOS, creates `PatientAlert` + `patient_alert_relationships`
+5. Emits socket event `new_sos_alert`
+6. Returns response with `sos_case` in payload
 
-**Code location:** [app/routes/alerts.py](../backend-py/app/routes/alerts.py#L180-L245)
+**Code location:** [app/routes/sos_alerts.py](../backend-py/app/routes/sos_alerts.py)
 
 ---
 
@@ -72,9 +75,9 @@ The monitoring system now uses **independent, specialized checks** rather than a
 4. If breach detected (outside home radius):
    - Updates `user.geofence_last_alert` timestamp
    - Applies 10-minute cooldown (prevents alert spam)
-   - Creates `Alert` record (alert_type="geofence", priority="high")
-   - Creates `PatientAlert` audit record with source="scheduler"
-   - Creates relationships to notify caregivers/family
+  - Creates `GeofenceBreachEvent`
+  - Creates `PatientAlert` emergency record
+  - Creates `patient_alert_relationships` to notify caregivers/family
 5. Commits DB changes and continues
 
 **Code location:** [app/services/geofence_scheduler.py](../backend-py/app/services/geofence_scheduler.py)
@@ -141,7 +144,7 @@ Returns the current status and mode of all checks.
 }
 ```
 
-### `POST /api/alerts/sos`
+### `POST /api/sos-alerts`
 Triggers an SOS alert and runs the SOS check.
 
 **Request:**
@@ -158,15 +161,9 @@ Triggers an SOS alert and runs the SOS check.
   "id": "...",
   "patient_id": "...",
   "alert_type": "sos",
-  "status": "active",
-  "title": "SOS Emergency Alert",
-  "relationships": [...],
-  "sos_result": {
-    "triggered": true,
-    "case": "SOS_TRIGGER",
-    "action": "SEND_CONFIRMATION",
-    "reason": "SOS triggered"
-  }
+  "priority": "high",
+  "message": "Patient triggered SOS button",
+  "sos_case": "SOS_TRIGGER"
 }
 ```
 
@@ -174,11 +171,13 @@ Triggers an SOS alert and runs the SOS check.
 
 ## Data Models
 
-### Alert
-Frontend-visible alert created by monitoring checks. Links patients to caregivers/family.
-- `alert_type`: "sos" | "geofence" | "health" | "inactivity"
-- `status`: "active" | "resolved"
-- `priority`: "critical" | "high" | "medium" | "low"
+### Unified Feed
+Frontend-visible recent alerts are aggregated by `GET /api/alerts/me` from:
+- `sos_alerts`
+- `geofence_breach_events`
+- `medication_schedule_breaches`
+- `patient_inactivity_logs`
+- `patient_alerts`
 
 ### PatientAlert
 Audit log entry for every alert event. Used for patient personal history.
@@ -186,8 +185,8 @@ Audit log entry for every alert event. Used for patient personal history.
 - `case`: The specific rule that triggered (e.g., "SOS_TRIGGER", "GEOFENCE_BREACH")
 - Immutable once created
 
-### AlertRelationship
-Links an `Alert` to caregivers/family members so they see it in their alerts list. Auto-populated based on patient's relationships.
+### PatientAlertRelationship
+Links a `PatientAlert` to caregivers/family members so emergency alerts are visible to assigned users.
 
 ---
 
@@ -245,7 +244,7 @@ To add a new independent check (e.g., Medication):
 3. **Create relationships & alerts if needed:**
    ```python
    alert = Alert(patient_id=..., alert_type="medication", ...)
-   create_alert_relationships(db, alert.id, patient_id)
+  create_patient_alert_relationships(db, patient_alert.id, patient_id)
    ```
 
 4. **Add to config** if it should be toggleable:

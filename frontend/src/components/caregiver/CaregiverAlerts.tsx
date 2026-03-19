@@ -3,51 +3,44 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { AlertCircle, Clock, CheckCircle, RefreshCw } from "lucide-react";
 import { formatRelativeTime, parseDateTime } from "@/lib/datetime";
+import { AlertLike, getAlertCategory, getAlertVisualStyle, isEmergencyAlert } from "@/lib/alert-ui";
 
-interface AlertItem {
-  id: string;
-  alert_type: string;
-  status: string;
-  priority: string;
-  title: string;
-  message: string;
-  voice_transcription?: string;
-  patient_name?: string;
-  created_at: string;
-  source?: string; // 'normal' or 'budii'
-}
-
-function alertStyle(source?: string) {
-  // Budii alerts always use red
-  if (source === 'budii') {
-    // stronger background and border for serious budii alerts
-    return { border: "border-destructive", bg: "bg-destructive/5", icon: "text-destructive", itemBg: "bg-destructive/10" };
-  }
-  // Normal alerts use the portal primary accent
-  return { border: "border-primary/50", bg: "bg-primary/[0.08]", icon: "text-primary", itemBg: "" };
-}
+type AlertItem = AlertLike;
 
 const AlertCard = ({ alert }: { alert: AlertItem }) => {
-  const isBudii = alert.source === 'budii';
-  const s = alertStyle(alert.source);
+  const style = getAlertVisualStyle(alert);
+  const category = getAlertCategory(alert);
+  const isEmergency = isEmergencyAlert(alert);
+
+  const typeLabel = isEmergency
+    ? "Emergency"
+    : category === "sos"
+      ? "SOS"
+      : category === "geofence"
+        ? "Geofence"
+        : category === "medication"
+          ? "Medication"
+          : "Inactivity";
+
   return (
-    <div className={`p-4 rounded-lg border-l-4 ${s.border} ${isBudii ? s.itemBg : s.bg} transition-all hover:shadow-md`}>
+    <div className={`p-4 rounded-lg border-l-4 ${style.container} transition-all hover:shadow-md`}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-3 flex-1">
-          <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${s.bg}`}>
-            <AlertCircle className={`w-5 h-5 ${s.icon}`} />
+          <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${style.iconWrap}`}>
+            <AlertCircle className={`w-5 h-5 ${style.icon}`} />
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap mb-0.5">
               <p className="font-semibold text-sm">{alert.patient_name ?? "Patient"}</p>
-              {isBudii && (
+              {isEmergency && (
                 <Badge variant="destructive" className="text-[10px] h-4 px-1.5 font-bold">SERIOUS</Badge>
               )}
-              <Badge variant={alert.priority === "critical" || alert.priority === "high" ? "destructive" : "secondary"} className="text-[10px] h-4 px-1.5">
-                {alert.alert_type.toUpperCase()}
+              <Badge className={`text-[10px] h-4 px-1.5 ${style.badge}`}>
+                {typeLabel}
               </Badge>
             </div>
-            <p className="text-sm text-muted-foreground">{alert.title}</p>
+            <p className="text-sm font-medium">{alert.title}</p>
+            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{alert.message}</p>
             {alert.voice_transcription && (
               <p className="text-xs italic text-muted-foreground mt-1">
                 "{alert.voice_transcription}"

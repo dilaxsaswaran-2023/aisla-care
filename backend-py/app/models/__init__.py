@@ -1,5 +1,3 @@
-from app.models.alert import Alert
-from app.models.alert_relationship import AlertRelationship
 from app.models.audit_log import AuditLog
 from app.models.consent_record import ConsentRecord
 from app.models.device import Device
@@ -14,12 +12,14 @@ from app.models.user import User
 from app.models.medication_schedule import MedicationSchedule
 from app.models.medication_schedule_monitor import MedicationScheduleMonitor
 from app.models.medication_schedule_breach import MedicationScheduleBreach
-from app.models.patient_active_hours import PatientActiveHours
+from app.models.patient_alert import PatientAlert
+from app.models.patient_alert_relationship import PatientAlertRelationship
+from app.models.sos_alert import SosAlert
+from app.models.geofence_breach_event import GeofenceBreachEvent
+from app.models.patient_inactivity_log import PatientInactivityLog
 from app.models.agent_event import AgentEvent
 
 __all__ = [
-    "Alert",
-    "AlertRelationship",
     "AuditLog",
     "ConsentRecord",
     "Device",
@@ -35,6 +35,10 @@ __all__ = [
     "MedicationSchedule",
     "MedicationScheduleMonitor",
     "MedicationScheduleBreach",
-    "PatientActiveHours",
+    "PatientAlert",
+    "PatientAlertRelationship",
+    "SosAlert",
+    "GeofenceBreachEvent",
+    "PatientInactivityLog",
     "AgentEvent",
 ]

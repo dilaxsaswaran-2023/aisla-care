@@ -1,505 +1,405 @@
 import uuid
-import logging
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, Request
+
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
 
-from app.database import get_db
-from app.models.alert import Alert
-from app.models.alert_relationship import AlertRelationship
-from app.models.gps_location import GpsLocation
-from app.models.user import User
 from app.auth import get_current_user
-from app.services.alert_relationship_service import create_alert_relationships
-from app.models.budii_alert import PatientAlert
+from app.database import get_db
+from app.models.patient_alert import PatientAlert
+from app.models.patient_alert_relationship import PatientAlertRelationship
+from app.models.geofence_breach_event import GeofenceBreachEvent
+from app.models.medication_schedule_breach import MedicationScheduleBreach
+from app.models.patient_inactivity_log import PatientInactivityLog
+from app.models.relationship import Relationship
 from app.models.sos_alert import SosAlert
-from app.services.budii_alert_relationship_service import create_budii_alert_relationships
-from app.services.firebase_helper import push_patient_alert
-from app.services.sos_priority_service import get_sos_priority
-from app.services.audit_log_service import log_audit_event, build_field_changes
+from app.models.user import User
 
-logger = logging.getLogger("alerts.router")
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
 
 
-# ── SOS Check Helper ─────────────────────────────────────────────────────────
-def check_sos_direct(alert: Alert, db: Session, patient_id: uuid.UUID) -> list:
-    """
-    Check if the SOS is a repeat within 8 minutes or a new trigger.
-    Returns a rule dict if SOS is detected, empty list otherwise.
-    """
-    if alert.alert_type != "sos":
-        return []
-    
-    current_time = alert.created_at
-    if current_time.tzinfo is not None:
-        current_time = current_time.astimezone(timezone.utc).replace(tzinfo=None)
-    
-    # Get the most recent previous SOS alert, excluding the current one
-    last_sos = (
-        db.query(Alert)
-        .filter(
-            Alert.patient_id == patient_id,
-            Alert.alert_type == "sos",
-            Alert.id != alert.id,
-        )
-        .order_by(desc(Alert.created_at))
-        .first()
+class AlertAcknowledgeRequest(BaseModel):
+    how: str
+
+
+def _get_accessible_patient_ids(db: Session, current_user: dict) -> list[uuid.UUID]:
+    user_id = uuid.UUID(current_user["userId"])
+    role = current_user.get("role")
+
+    if role in ["super_admin", "admin"]:
+        return [row.id for row in db.query(User.id).filter(User.role == "patient").all()]
+
+    if role == "patient":
+        return [user_id]
+
+    relationship_rows = db.query(Relationship.patient_id).filter(
+        Relationship.related_user_id == user_id,
+        Relationship.patient_id.isnot(None),
     )
-    
-    if not last_sos:
-        logger.info(f"[SOS] No previous SOS for patient {patient_id} - SOS_TRIGGER")
-        return [{
-            "triggered": True,
-            "case": "SOS_TRIGGER",
-            "action": "SEND_CONFIRMATION",
-            "reason": "SOS triggered",        
-            "voice_transcription": alert.voice_transcription,
-        }]
-    
-    last_time = last_sos.created_at
-    if last_time.tzinfo is not None:
-        last_time = last_time.astimezone(timezone.utc).replace(tzinfo=None)
-    
-    diff = int((current_time - last_time).total_seconds())
-    logger.info(f"[SOS] Seconds since last SOS: {diff}")
-    
-    if diff <= 480:  # 8 minutes
-        logger.warning(f"[SOS] SOS_REPEAT detected for patient {patient_id} within 8 minutes")
-        return [{
-            "triggered": True,
-            "case": "SOS_REPEAT",
-            "action": "START_EMERGENCY",
-            "reason": "Repeated SOS within 8 minutes",
-            "voice_transcription": alert.voice_transcription,
-        }]
-    
-    logger.info(f"[SOS] SOS_TRIGGER for patient {patient_id} - more than 8 minutes since last")
-    return [{
-        "triggered": True,
-        "case": "SOS_TRIGGER",
-        "action": "SEND_CONFIRMATION",
-        "reason": "SOS triggered",
-        "voice_transcription": alert.voice_transcription,
-    }]
+
+    if role == "family":
+        relationship_rows = relationship_rows.filter(Relationship.relationship_type == "family")
+        return [row.patient_id for row in relationship_rows.all()]
+
+    if role == "caregiver":
+        related_patient_ids = [row.patient_id for row in relationship_rows.all()]
+        assigned_patient_ids = [
+            row.id for row in db.query(User.id).filter(
+                User.role == "patient",
+                User.caregiver_id == user_id,
+            ).all()
+        ]
+        return list(set(related_patient_ids + assigned_patient_ids))
+
+    return []
 
 
-# Request models
-class SOSAlertRequest(BaseModel):
-    voice_transcription: str | None = None
-    message: str | None = None
+def _patient_name_map(db: Session, patient_ids: list[uuid.UUID]) -> dict[str, str]:
+    if not patient_ids:
+        return {}
+    rows = db.query(User.id, User.full_name).filter(User.id.in_(patient_ids)).all()
+    return {str(r.id): r.full_name for r in rows}
 
 
-# GET /api/alerts
-@router.get("/")
-def list_alerts(
-    current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    alerts = db.query(Alert).order_by(Alert.created_at.desc()).limit(50).all()
-    return [a.to_dict() for a in alerts]
+def _patient_contact_map(db: Session, patient_ids: list[uuid.UUID]) -> dict[str, dict]:
+    if not patient_ids:
+        return {}
+    rows = (
+        db.query(User.id, User.full_name, User.phone_country, User.phone_number)
+        .filter(User.id.in_(patient_ids))
+        .all()
+    )
+    return {
+        str(r.id): {
+            "name": r.full_name,
+            "phone_country": r.phone_country,
+            "phone_number": r.phone_number,
+        }
+        for r in rows
+    }
 
 
-# GET /api/alerts/me — returns alerts linked to current user via alert_relationships
+def _sort_timestamp(value: str | None) -> datetime:
+    if not value:
+        return datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+
+    return parsed.astimezone(timezone.utc)
+
+
 @router.get("/me")
 def my_alerts(
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Returns all alerts where the logged-in user appears as caregiver_id or family_id
-    in the alert_relationships table. Enriches each alert with the patient's name.
-    """
-    user_id = uuid.UUID(current_user["userId"])
+    patient_ids = _get_accessible_patient_ids(db, current_user)
+    if not patient_ids:
+        return []
 
-    # Find all alert_ids linked to this user (as caregiver or family)
-    relationships = (
-        db.query(AlertRelationship)
+    patient_name_by_id = _patient_name_map(db, patient_ids)
+    patient_contact_by_id = _patient_contact_map(db, patient_ids)
+    patient_alert_rows = (
+        db.query(PatientAlert)
         .filter(
-            (AlertRelationship.caregiver_id == user_id) |
-            (AlertRelationship.family_id == user_id)
+            PatientAlert.patient_id.in_(patient_ids),
+            PatientAlert.source.in_(["sos", "geofence", "inactivity", "medication"]),
         )
         .all()
     )
+    patient_alert_by_source_event: dict[tuple[str, str], PatientAlert] = {
+        ((row.source or "").strip().lower(), str(row.event_id)): row
+        for row in patient_alert_rows
+        if row.event_id
+    }
+    result: list[dict] = []
 
-    alert_ids = list({rel.alert_id for rel in relationships})
-
-    if not alert_ids:
-        return []
-
-    alerts = (
-        db.query(Alert)
-        .filter(Alert.id.in_(alert_ids), Alert.is_added_to_emergency != True)
-        .order_by(Alert.created_at.desc())
-        .limit(50)
+    sos_alerts = (
+        db.query(SosAlert)
+        .filter(
+            SosAlert.patient_id.in_(patient_ids),
+            SosAlert.is_patient_alert == False,
+        )
+        .order_by(SosAlert.created_at.desc())
+        .limit(100)
         .all()
     )
+    for item in sos_alerts:
+        linked_patient_alert = patient_alert_by_source_event.get(("sos", str(item.id)))
+        result.append(
+            {
+                "id": str(item.id),
+                "patient_alert_id": str(linked_patient_alert.id) if linked_patient_alert else None,
+                "event_id": item.event_id,
+                "patient_id": str(item.patient_id),
+                "patient_name": patient_name_by_id.get(str(item.patient_id), "Unknown"),
+                "alert_type": "sos",
+                "status": "active",
+                "priority": item.priority or "high",
+                "title": "SOS Emergency Alert",
+                "message": item.message or "Patient triggered SOS button",
+                "is_read": bool(item.is_read),
+                "is_acknowledged": bool(getattr(linked_patient_alert, "is_acknowledged", False)),
+                "acknowledged_via": getattr(linked_patient_alert, "acknowledged_via", None),
+                "patient_phone_country": patient_contact_by_id.get(str(item.patient_id), {}).get("phone_country"),
+                "patient_phone_number": patient_contact_by_id.get(str(item.patient_id), {}).get("phone_number"),
+                "created_at": item.created_at.isoformat() if item.created_at else None,
+                "source": "sos",
+            }
+        )
 
-    # Enrich alerts with patient name
-    result = []
-    for alert in alerts:
-        data = alert.to_dict()
-        patient = db.query(User).filter(User.id == alert.patient_id).first()
-        data["patient_name"] = patient.full_name if patient else "Unknown"
-        result.append(data)
+    geofence_events = (
+        db.query(GeofenceBreachEvent)
+        .filter(
+            GeofenceBreachEvent.patient_id.in_(patient_ids),
+            GeofenceBreachEvent.is_patient_alert == False,
+        )
+        .order_by(GeofenceBreachEvent.breached_at.desc())
+        .limit(100)
+        .all()
+    )
+    for item in geofence_events:
+        linked_patient_alert = patient_alert_by_source_event.get(("geofence", str(item.id)))
+        result.append(
+            {
+                "id": str(item.id),
+                "patient_alert_id": str(linked_patient_alert.id) if linked_patient_alert else None,
+                "event_id": str(item.id),
+                "patient_id": str(item.patient_id),
+                "patient_name": patient_name_by_id.get(str(item.patient_id), "Unknown"),
+                "alert_type": "geofence_breach",
+                "status": "active",
+                "priority": "high",
+                "title": "Geofence Breach Detected",
+                "message": f"Patient is outside the safe zone (distance: {round(item.distance_meters or 0, 1)}m)",
+                "is_read": True,
+                "is_acknowledged": bool(getattr(linked_patient_alert, "is_acknowledged", False)),
+                "acknowledged_via": getattr(linked_patient_alert, "acknowledged_via", None),
+                "patient_phone_country": patient_contact_by_id.get(str(item.patient_id), {}).get("phone_country"),
+                "patient_phone_number": patient_contact_by_id.get(str(item.patient_id), {}).get("phone_number"),
+                "latitude": item.latitude,
+                "longitude": item.longitude,
+                "created_at": item.breached_at.isoformat() if item.breached_at else None,
+                "source": "geofence",
+            }
+        )
 
-    return result
+    inactivity_events = (
+        db.query(PatientInactivityLog)
+        .filter(
+            PatientInactivityLog.patient_id.in_(patient_ids),
+            PatientInactivityLog.is_patient_alert == False,
+        )
+        .order_by(PatientInactivityLog.inactivity_time.desc())
+        .limit(100)
+        .all()
+    )
+    for item in inactivity_events:
+        linked_patient_alert = patient_alert_by_source_event.get(("inactivity", str(item.id)))
+        result.append(
+            {
+                "id": str(item.id),
+                "patient_alert_id": str(linked_patient_alert.id) if linked_patient_alert else None,
+                "event_id": str(item.id),
+                "patient_id": str(item.patient_id),
+                "patient_name": patient_name_by_id.get(str(item.patient_id), "Unknown"),
+                "alert_type": "inactivity",
+                "status": "active",
+                "priority": "medium",
+                "title": "Patient Inactivity Detected",
+                "message": f"Inactivity type: {item.inactivity_type}",
+                "is_read": True,
+                "is_acknowledged": bool(getattr(linked_patient_alert, "is_acknowledged", False)),
+                "acknowledged_via": getattr(linked_patient_alert, "acknowledged_via", None),
+                "patient_phone_country": patient_contact_by_id.get(str(item.patient_id), {}).get("phone_country"),
+                "patient_phone_number": patient_contact_by_id.get(str(item.patient_id), {}).get("phone_number"),
+                "created_at": item.inactivity_time.isoformat() if item.inactivity_time else None,
+                "source": "inactivity",
+            }
+        )
+
+    medication_events = (
+        db.query(MedicationScheduleBreach)
+        .filter(
+            MedicationScheduleBreach.patient_id.in_(patient_ids),
+            MedicationScheduleBreach.is_patient_alert == False,
+        )
+        .order_by(MedicationScheduleBreach.breach_found_at.desc())
+        .limit(100)
+        .all()
+    )
+    for item in medication_events:
+        priority = "high" if "high" in (item.reason or "").lower() else "medium"
+        linked_patient_alert = patient_alert_by_source_event.get(("medication", str(item.id)))
+        result.append(
+            {
+                "id": str(item.id),
+                "patient_alert_id": str(linked_patient_alert.id) if linked_patient_alert else None,
+                "event_id": str(item.id),
+                "patient_id": str(item.patient_id),
+                "patient_name": patient_name_by_id.get(str(item.patient_id), "Unknown"),
+                "alert_type": "medication_breach",
+                "status": item.status or "active",
+                "priority": priority,
+                "title": "Medication Schedule Breach",
+                "message": item.reason or "Medication was not taken on time",
+                "is_read": True,
+                "is_acknowledged": bool(getattr(linked_patient_alert, "is_acknowledged", False)),
+                "acknowledged_via": getattr(linked_patient_alert, "acknowledged_via", None),
+                "patient_phone_country": patient_contact_by_id.get(str(item.patient_id), {}).get("phone_country"),
+                "patient_phone_number": patient_contact_by_id.get(str(item.patient_id), {}).get("phone_number"),
+                "created_at": item.breach_found_at.isoformat() if item.breach_found_at else None,
+                "source": "medication",
+            }
+        )
+
+    user_id = uuid.UUID(current_user["userId"])
+    patient_alert_rel = (
+        db.query(PatientAlertRelationship)
+        .filter(
+            (PatientAlertRelationship.caregiver_id == user_id)
+            | (PatientAlertRelationship.family_id == user_id)
+        )
+        .all()
+    )
+    patient_alert_ids = [row.patient_alert_id for row in patient_alert_rel]
+
+    if patient_alert_ids:
+        patient_alerts = (
+            db.query(PatientAlert)
+            .filter(PatientAlert.id.in_(patient_alert_ids))
+            .order_by(PatientAlert.created_at.desc())
+            .limit(100)
+            .all()
+        )
+        for item in patient_alerts:
+            result.append(
+                {
+                    "id": str(item.id),
+                    "patient_alert_id": str(item.id),
+                    "event_id": item.event_id,
+                    "patient_id": str(item.patient_id),
+                    "patient_name": patient_name_by_id.get(str(item.patient_id), "Unknown"),
+                    "alert_type": item.alert_type,
+                    "status": "active",
+                    "priority": "high",
+                    "title": item.title,
+                    "message": item.title,
+                    "is_read": bool(item.is_read),
+                    "is_acknowledged": bool(getattr(item, "is_acknowledged", False)),
+                    "acknowledged_via": getattr(item, "acknowledged_via", None),
+                    "patient_phone_country": patient_contact_by_id.get(str(item.patient_id), {}).get("phone_country"),
+                    "patient_phone_number": patient_contact_by_id.get(str(item.patient_id), {}).get("phone_number"),
+                    "created_at": item.created_at.isoformat() if item.created_at else None,
+                    "source": "budii",
+                }
+            )
+
+    result.sort(key=lambda x: _sort_timestamp(x.get("created_at")), reverse=True)
+
+    return result[:200]
 
 
-# GET /api/alerts/:id
-@router.get("/{alert_id}")
-def get_alert(
+@router.patch("/{source}/{alert_id}/acknowledge")
+def acknowledge_alert(
+    source: str,
     alert_id: str,
+    body: AlertAcknowledgeRequest,
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     try:
-        aid = uuid.UUID(alert_id)
+        parsed_alert_id = uuid.UUID(alert_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid alert ID")
-    alert = db.query(Alert).filter(Alert.id == aid).first()
-    if not alert:
-        raise HTTPException(status_code=404, detail="Alert not found")
-    data = alert.to_dict()
-    patient = db.query(User).filter(User.id == alert.patient_id).first()
-    data["patient_name"] = patient.full_name if patient else "Unknown"
-    return data
 
+    if not body.how or not body.how.strip():
+        raise HTTPException(status_code=400, detail="Acknowledgement method is required")
 
-# POST /api/alerts
-@router.post("/", status_code=201)
-def create_alert(
-    body: dict,
-    current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    patient_id = uuid.UUID(body["patient_id"])
-    
-    alert = Alert(
-        patient_id=patient_id,
-        alert_type=body["alert_type"],
-        status=body.get("status", "active"),
-        priority=body.get("priority", "medium"),
-        title=body["title"],
-        message=body.get("message", ""),
-        latitude=body.get("latitude"),
-        longitude=body.get("longitude"),
-    )
-    db.add(alert)
+    normalized_source = (source or "").strip().lower()
+    patient_ids = _get_accessible_patient_ids(db, current_user)
+    how = body.how.strip().lower()
+
+    if not patient_ids and current_user.get("role") not in ["super_admin", "admin"]:
+        raise HTTPException(status_code=403, detail="No accessible patients")
+
+    if normalized_source == "budii":
+        patient_alert = (
+            db.query(PatientAlert)
+            .filter(
+                PatientAlert.id == parsed_alert_id,
+                PatientAlert.patient_id.in_(patient_ids),
+            )
+            .first()
+        )
+    elif normalized_source in ["sos", "geofence", "inactivity", "medication"]:
+        patient_alert = (
+            db.query(PatientAlert)
+            .filter(
+                PatientAlert.source == normalized_source,
+                PatientAlert.event_id == str(parsed_alert_id),
+                PatientAlert.patient_id.in_(patient_ids),
+            )
+            .order_by(PatientAlert.created_at.desc())
+            .first()
+        )
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported alert source")
+
+    if not patient_alert:
+        raise HTTPException(status_code=404, detail="Patient alert not found for this source alert")
+
+    patient_alert.is_acknowledged = True
+    patient_alert.acknowledged_via = how
+    db.add(patient_alert)
     db.commit()
-    db.refresh(alert)
 
-    log_audit_event(
-        db,
-        action="alert_created",
-        event_type="alerts",
-        entity_type="alert",
-        entity_id=str(alert.id),
-        current_user=current_user,
-        patient_id=alert.patient_id,
-        summary="Alert created",
-        details="A new patient alert was created.",
-        context={
-            "alert_type": alert.alert_type,
-            "priority": alert.priority,
-            "status": alert.status,
-            "title": alert.title,
-        },
-    )
-
-    # Create alert relationships for all caregivers and family members
-    relationships = create_alert_relationships(db, alert.id, patient_id)
-
-    # Build response with alert and relationships
-    response = alert.to_dict()
-    response["relationships"] = relationships
-    
-    return response
-
-
-# PATCH /api/alerts/:id
-@router.patch("/{alert_id}")
-def update_alert(
-    alert_id: str,
-    body: dict,
-    current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    alert = db.query(Alert).filter(Alert.id == uuid.UUID(alert_id)).first()
-    if not alert:
-        raise HTTPException(404, "Alert not found")
-
-    before = {
-        "status": alert.status,
-        "priority": alert.priority,
-        "title": alert.title,
-        "message": alert.message,
-        "latitude": alert.latitude,
-        "longitude": alert.longitude,
+    return {
+        "success": True,
+        "id": str(patient_alert.id),
+        "patient_alert_id": str(patient_alert.id),
+        "source": normalized_source,
+        "is_acknowledged": True,
+        "acknowledged_via": how,
     }
 
-    for key in ["status", "priority", "title", "message", "latitude", "longitude"]:
-        if key in body:
-            setattr(alert, key, body[key])
 
-    db.commit()
-    db.refresh(alert)
-
-    after = {
-        "status": alert.status,
-        "priority": alert.priority,
-        "title": alert.title,
-        "message": alert.message,
-        "latitude": alert.latitude,
-        "longitude": alert.longitude,
-    }
-    changes = build_field_changes(before, after, ["status", "priority", "title", "message", "latitude", "longitude"])
-
-    log_audit_event(
-        db,
-        action="alert_updated",
-        event_type="alerts",
-        entity_type="alert",
-        entity_id=str(alert.id),
-        current_user=current_user,
-        patient_id=alert.patient_id,
-        summary="Alert updated",
-        details="Alert fields were updated.",
-        context={
-            "alert_type": alert.alert_type,
-            "status": alert.status,
-            "priority": alert.priority,
-        },
-        changes=changes,
-    )
-
-    return alert.to_dict()
-
-
-# PATCH /api/alerts/mark-read/{alert_id}
-@router.patch("/mark-read/{alert_id}")
-def mark_alert_read(
-    alert_id: str,
-    current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """
-    Mark a single alert as read.
-    """
-    try:
-        aid = uuid.UUID(alert_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid alert ID")
-    
-    alert = db.query(Alert).filter(Alert.id == aid).first()
-    if not alert:
-        raise HTTPException(status_code=404, detail="Alert not found")
-    
-    alert.is_read = True
-    db.add(alert)
-    db.commit()
-
-    log_audit_event(
-        db,
-        action="alert_marked_read",
-        event_type="alerts",
-        entity_type="alert",
-        entity_id=str(alert.id),
-        current_user=current_user,
-        patient_id=alert.patient_id,
-        summary="Alert marked as read",
-        details="A single alert was marked as read.",
-        context={"alert_type": alert.alert_type},
-    )
-
-    return {"success": True}
-
-
-# PATCH /api/alerts/mark-read-all
 @router.patch("/mark-read-all")
 def mark_all_alerts_read(
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Mark all alerts linked to the current user as read.
-    """
+    patient_ids = _get_accessible_patient_ids(db, current_user)
+
+    if patient_ids:
+        db.query(SosAlert).filter(
+            SosAlert.patient_id.in_(patient_ids),
+            SosAlert.is_read == False,
+        ).update({"is_read": True}, synchronize_session="fetch")
+
     user_id = uuid.UUID(current_user["userId"])
     rel_ids = [
-        r.alert_id for r in
-        db.query(AlertRelationship).filter(
-            (AlertRelationship.caregiver_id == user_id) |
-            (AlertRelationship.family_id == user_id)
-        ).all()
+        r.patient_alert_id
+        for r in db.query(PatientAlertRelationship)
+        .filter(
+            (PatientAlertRelationship.caregiver_id == user_id)
+            | (PatientAlertRelationship.family_id == user_id)
+        )
+        .all()
     ]
+
     if rel_ids:
-        db.query(Alert).filter(Alert.id.in_(rel_ids), Alert.is_read == False).update(
-            {"is_read": True}, synchronize_session="fetch"
-        )
+        db.query(PatientAlert).filter(
+            PatientAlert.id.in_(rel_ids),
+            PatientAlert.is_read == False,
+        ).update({"is_read": True}, synchronize_session="fetch")
+
     db.commit()
-
-    log_audit_event(
-        db,
-        action="alerts_marked_read_all",
-        event_type="alerts",
-        entity_type="alert",
-        current_user=current_user,
-        summary="All visible alerts marked as read",
-        details="All unread alerts linked to the actor were marked as read.",
-        context={"count": len(rel_ids)},
-    )
-
     return {"success": True}
-
-
-# POST /api/alerts/sos
-@router.post("/sos", status_code=201)
-async def sos_alert(
-    request: Request,
-    body: SOSAlertRequest,
-    current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    user_id = uuid.UUID(current_user["userId"])
-
-    latest_gps = (
-        db.query(GpsLocation)
-        .filter(GpsLocation.user_id == user_id)
-        .order_by(GpsLocation.created_at.desc())
-        .first()
-    )
-
-    alert = Alert(
-        patient_id=user_id,
-        alert_type="sos",
-        status="active",
-        priority="critical",
-        title="SOS Emergency Alert",
-        message=body.message or "Patient triggered SOS button",
-        voice_transcription=body.voice_transcription,
-        latitude=latest_gps.latitude if latest_gps else None,
-        longitude=latest_gps.longitude if latest_gps else None,
-    )
-    db.add(alert)
-    db.commit()
-    db.refresh(alert)
-
-    log_audit_event(
-        db,
-        action="sos_triggered",
-        event_type="alerts",
-        entity_type="alert",
-        entity_id=str(alert.id),
-        current_user=current_user,
-        patient_id=user_id,
-        summary="SOS alert triggered",
-        details="Patient triggered SOS and an emergency alert was created.",
-        context={
-            "priority": alert.priority,
-            "latitude": alert.latitude,
-            "longitude": alert.longitude,
-            "voice_transcription": bool(body.voice_transcription),
-        },
-        severity="critical",
-    )
-
-    # Create alert relationships for all caregivers and family members
-    relationships = create_alert_relationships(db, alert.id, user_id)
-
-    # Run SOS check to determine if it's SOS_TRIGGER or SOS_REPEAT
-    sos_rules = check_sos_direct(alert, db, user_id)
-
-    # If SOS_REPEAT → create PatientAlert, mark alert as emergency, push to Firebase
-    sos_case = sos_rules[0]["case"] if sos_rules else None
-    if sos_case == "SOS_TRIGGER" or sos_case == "SOS_REPEAT":
-        sos_alert = SosAlert(
-            patient_id=user_id,
-            event_id=str(alert.id), 
-            alert_type="sos",   
-            message=sos_rules[0].get("voice_transcription", ""), 
-            priority=(
-                get_sos_priority(body.voice_transcription or "")
-                if sos_case == "SOS_TRIGGER"
-                else "high"
-            ) or "high",
-        )            
-        db.add(sos_alert)
-        db.commit()
-        db.refresh(sos_alert)
-
-        log_audit_event(
-            db,
-            action="sos_recorded",
-            event_type="alerts",
-            entity_type="sos_alert",
-            entity_id=str(sos_alert.id),
-            current_user=current_user,
-            patient_id=user_id,
-            summary="SOS emergency record created",
-            details="An SOS event was persisted for emergency workflow.",
-            context={
-                "sos_case": sos_case,
-                "priority": sos_alert.priority,
-            },
-            severity="critical",
-        )
-
-    if sos_case == "SOS_REPEAT":
-        alert.is_added_to_emergency = True
-        db.add(alert)
-
-        patient_alert = PatientAlert(
-            patient_id=user_id,
-            event_id=str(alert.id),
-            alert_type="SOS_REPEAT",
-        )
-        db.add(patient_alert)
-        db.flush()
-        create_budii_alert_relationships(db, patient_alert.id, user_id)
-        db.commit()
-        db.refresh(patient_alert)
-
-        log_audit_event(
-            db,
-            action="sos_escalated",
-            event_type="alerts",
-            entity_type="patient_alert",
-            entity_id=str(patient_alert.id),
-            current_user=current_user,
-            patient_id=user_id,
-            summary="SOS escalated to emergency workflow",
-            details="Repeated SOS promoted to emergency queue and notifications were sent.",
-            context={
-                "sos_case": sos_case,
-                "source_alert_id": str(alert.id),
-            },
-            severity="critical",
-        )
-
-        # Push to Firebase
-        pa_dict = patient_alert.to_dict()
-        patient_user = db.query(User).filter(User.id == user_id).first()
-        pa_dict["patient_name"] = patient_user.full_name if patient_user else "Unknown"
-        push_patient_alert(pa_dict)
-
-    # Emit socket event if available
-    sio = getattr(request.app.state, "sio", None)
-    if sio and sos_rules:
-        try:
-            await sio.emit("new_alert", {
-                "patient_id": str(user_id),
-                "alert_id": str(alert.id),
-                "alert_type": "sos",
-                "sos_rules": sos_rules,
-            })
-        except Exception as exc:
-            logger.warning(f"[SOS] socket emit failed: {exc}")
-
-    # Build response with alert and relationships
-    response = alert.to_dict()
-    response["relationships"] = relationships
-    response["sos_result"] = sos_rules[0] if sos_rules else None
-    
-    return response

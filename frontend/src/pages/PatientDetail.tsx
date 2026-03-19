@@ -11,11 +11,7 @@ import {
   ArrowLeft,
   User,
   AlertCircle,
-  Pill,
-  Bell,
   RefreshCw,
-  Edit,
-  Power,
   Mail,
   Phone,
   MapPin,
@@ -23,6 +19,12 @@ import {
 } from "lucide-react";
 import MedicationScheduleDialog from "@/components/patient/MedicationScheduleDialog";
 import { formatDate, getTodayLocalDateString } from "@/lib/datetime";
+import {
+  MedicationFlowCard,
+  MedicationMonitorItem,
+  MedicationScheduleItem,
+  MedicationSchedulesCard,
+} from "@/components/caregiver/medication/MedicationShared";
 
 interface Patient {
   id: string;
@@ -47,37 +49,6 @@ interface Alert {
   patient_name?: string;
 }
 
-interface MedicationSchedule {
-  id: string;
-  name: string;
-  description?: string;
-  prescription?: string;
-  schedule_type: string;
-  scheduled_times: string[];
-  days_of_week?: number[];
-  meal_timing?: string;
-  dosage_type?: string;
-  dosage_count?: number;
-  urgency_level?: string;
-  grace_period_minutes?: number;
-  is_active: boolean;
-  created_at: string;
-}
-
-interface MedicationMonitorItem {
-  schedule_id: string;
-  medication_name: string;
-  description?: string;
-  urgency_level: string;
-  time: string;
-  scheduled_for_at: string;
-  due_at: string;
-  status: "pending" | "taken" | "missed";
-  taken_at?: string;
-  monitor_id?: string;
-  can_mark_done: boolean;
-}
-
 const PatientDetail = () => {
   const { patientId } = useParams<{ patientId: string }>();
   const { user } = useAuth();
@@ -86,7 +57,7 @@ const PatientDetail = () => {
 
   const [patient, setPatient] = useState<Patient | null>(null);
   const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [medicationSchedules, setMedicationSchedules] = useState<MedicationSchedule[]>([]);
+  const [medicationSchedules, setMedicationSchedules] = useState<MedicationScheduleItem[]>([]);
   const [medicationItems, setMedicationItems] = useState<MedicationMonitorItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMedication, setLoadingMedication] = useState(false);
@@ -129,7 +100,7 @@ const PatientDetail = () => {
       });
       setAlerts(patientAlerts);
 
-      const schedulesData = await api.get(`/medication-schedules?patient_id=${patientId}`) as MedicationSchedule[];
+      const schedulesData = await api.get(`/medication-schedules?patient_id=${patientId}`) as MedicationScheduleItem[];
       setMedicationSchedules(schedulesData);
 
       await loadMedicationStatus(patientId);
@@ -143,10 +114,6 @@ const PatientDetail = () => {
     } finally {
       setLoading(false);
     }
-  };
-
-  const formatTimeT = (value: string): string => {
-    return value.split("T")[1].slice(0, 5);
   };
 
   const loadMedicationStatus = async (pId: string) => {
@@ -177,16 +144,16 @@ const PatientDetail = () => {
         ...scheduleForm,
         scheduled_times: scheduleForm.scheduled_times.filter(t => t.trim() !== ""),
       };
-      let updatedSchedule: MedicationSchedule;
+      let updatedSchedule: MedicationScheduleItem;
       if (editingScheduleId) {
-        updatedSchedule = await api.patch(`/medication-schedules/${editingScheduleId}`, payload) as MedicationSchedule;
+        updatedSchedule = await api.patch(`/medication-schedules/${editingScheduleId}`, payload) as MedicationScheduleItem;
         setMedicationSchedules(prev => prev.map(s => s.id === editingScheduleId ? updatedSchedule : s));
         toast({
           title: "Success",
           description: "Medication schedule updated successfully",
         });
       } else {
-        updatedSchedule = await api.post('/medication-schedules', payload) as MedicationSchedule;
+        updatedSchedule = await api.post('/medication-schedules', payload) as MedicationScheduleItem;
         setMedicationSchedules(prev => [...prev, updatedSchedule]);
         toast({
           title: "Success",
@@ -223,7 +190,7 @@ const PatientDetail = () => {
     setEditingScheduleId(null);
   };
 
-  const handleEditSchedule = (schedule: MedicationSchedule) => {
+  const handleEditSchedule = (schedule: MedicationScheduleItem) => {
     setScheduleForm({
       name: schedule.name || "",
       description: schedule.description || "",
@@ -250,9 +217,9 @@ const PatientDetail = () => {
   const confirmToggleActive = async () => {
     if (!scheduleToToggle) return;
     try {
-      const res = await api.patch(`/medication-schedules/${scheduleToToggle}/toggle-active`) as MedicationSchedule | { success: boolean; is_active: boolean };
+      const res = await api.patch(`/medication-schedules/${scheduleToToggle}/toggle-active`) as MedicationScheduleItem | { success: boolean; is_active: boolean };
       if (res && 'id' in res && res.id) {
-        setMedicationSchedules(prev => prev.map(s => s.id === (res as MedicationSchedule).id ? (res as MedicationSchedule) : s));
+        setMedicationSchedules(prev => prev.map(s => s.id === (res as MedicationScheduleItem).id ? (res as MedicationScheduleItem) : s));
       } else {
         setMedicationSchedules(prev => prev.map(s => s.id === scheduleToToggle ? { ...s, is_active: !s.is_active } : s));
       }
@@ -331,7 +298,7 @@ const PatientDetail = () => {
 
   return (
     <div className="min-h-screen bg-background p-3 md:p-4">
-      <div className="max-w-[1600px] mx-auto space-y-4">
+      <div className="max-w-[80vw] mx-auto space-y-4">
         <div className="rounded-[28px] border bg-card/90 px-4 py-3 shadow-sm">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-3 min-w-0">
@@ -474,246 +441,35 @@ const PatientDetail = () => {
           </div>
 
           <div className="xl:col-span-4 space-y-4">
-            <Card className="rounded-[28px] border shadow-sm">
-              <CardHeader className="pb-3 pt-4 px-4">
-                <div className="flex items-center justify-between gap-2">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-xl bg-muted flex items-center justify-center">
-                      <Bell className="w-4 h-4" />
-                    </div>
-                    Today’s Medication Flow
-                    <Badge variant="secondary" className="rounded-lg">{medicationItems.length}</Badge>
-                  </CardTitle>
-
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => patientId && loadMedicationStatus(patientId)}
-                    className="rounded-xl h-8 px-2.5"
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                  </Button>
-                </div>
-              </CardHeader>
-
-              <CardContent className="px-4 pb-4">
-                {loadingMedication ? (
-                  <div className="rounded-2xl border border-dashed p-5 text-center text-sm text-muted-foreground">
-                    Loading...
-                  </div>
-                ) : medicationItems.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed p-5 text-center text-sm text-muted-foreground">
-                    No medication scheduled for today
-                  </div>
-                ) : (
-                  <div className="space-y-2 max-h-[780px] overflow-auto pr-1">
-                    {medicationItems.map((item, index) => {
-                      const key = `${item.schedule_id}-${item.time}`;
-                      const isDone = item.status === "taken";
-                      const isMissed = item.status === "missed";
-                      const statusVariant = isDone ? "default" : isMissed ? "destructive" : "secondary";
-                      const isLast = index === medicationItems.length - 1;
-                      const dotClass = isDone
-                        ? "bg-primary"
-                        : isMissed
-                        ? "bg-destructive"
-                        : "bg-muted-foreground";
-
-                      return (
-                        <div key={key} className="flex gap-2.5 items-stretch">
-                          <div className="relative w-4 shrink-0 flex justify-center">
-                            {!isLast ? (
-                              <div className="absolute top-4 bottom-[-8px] w-px bg-border" />
-                            ) : null}
-                            <div className={`relative z-10 mt-3 h-3 w-3 rounded-full border-2 border-background ${dotClass}`} />
-                          </div>
-
-                          <div className="flex-1 rounded-xl border bg-background px-3 py-2.5">
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <p className="font-semibold text-sm leading-5 truncate">{item.medication_name}</p>
-                                  <Badge variant="outline" className="h-5 px-1.5 text-[10px] rounded-md">
-                                    {item.time}
-                                  </Badge>
-                                  {item.urgency_level ? (
-                                    <Badge
-                                      variant={item.urgency_level === 'high' ? 'destructive' : item.urgency_level === 'low' ? 'secondary' : 'default'}
-                                      className="h-5 px-1.5 text-[10px] rounded-md"
-                                    >
-                                      {item.urgency_level.toUpperCase()}
-                                    </Badge>
-                                  ) : null}
-                                </div>
-
-                                {item.description ? (
-                                  <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1">
-                                    {item.description}
-                                  </p>
-                                ) : null}
-                              </div>
-
-                              <Badge variant={statusVariant} className="h-5 px-1.5 text-[10px] rounded-md shrink-0">
-                                {isDone ? "Taken" : isMissed ? "Missed" : "Pending"}
-                              </Badge>
-                            </div>
-
-                            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
-                              <div className="inline-flex items-center gap-1">
-                                <span className="text-muted-foreground">Scheduled</span>
-                                <span className="font-medium">
-                                  {formatTimeT(item.scheduled_for_at)}
-                                </span>
-                              </div>
-
-                              <div className="inline-flex items-center gap-1">
-                                <span className="text-muted-foreground">Due</span>
-                                <span className="font-medium">
-                                  {formatTimeT(item.due_at)}
-                                </span>
-                              </div>
-
-                              {item.taken_at ? (
-                                <div className="inline-flex items-center gap-1">
-                                  <span className="text-muted-foreground">Taken</span>
-                                  <span className="font-medium text-green-600">
-                                    {formatTimeT(item.taken_at)}
-                                  </span>
-                                </div>
-                              ) : null}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            <MedicationFlowCard
+              items={medicationItems}
+              loading={loadingMedication}
+              onRefresh={() => patientId && loadMedicationStatus(patientId)}
+            />
           </div>
 
           <div className="xl:col-span-5 space-y-4">
-            <Card className="rounded-[28px] border shadow-sm">
-              <CardHeader className="pb-3 pt-4 px-4">
-                <div className="flex items-center justify-between gap-3">
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <div className="w-8 h-8 rounded-xl bg-muted flex items-center justify-center">
-                      <Pill className="w-4 h-4" />
-                    </div>
-                    Medication Schedules
-                    <Badge variant="secondary" className="rounded-lg">{medicationSchedules.length}</Badge>
-                  </CardTitle>
-
-                  <MedicationScheduleDialog
-                    open={addScheduleOpen}
-                    onOpenChange={setAddScheduleOpen}
-                    scheduleForm={scheduleForm}
-                    setScheduleForm={setScheduleForm}
-                    addTimeSlot={addTimeSlot}
-                    updateTimeSlot={updateTimeSlot}
-                    removeTimeSlot={removeTimeSlot}
-                    toggleDayOfWeek={toggleDayOfWeek}
-                    handleAddSchedule={handleAddSchedule}
-                    isEditing={!!editingScheduleId}
-                    submitLabel={editingScheduleId ? 'Save Changes' : undefined}
-                  />
-                </div>
-              </CardHeader>
-
-              <CardContent className="px-4 pb-4">
-                {medicationSchedules.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed p-6 text-center text-sm text-muted-foreground">
-                    No medication schedules
-                  </div>
-                ) : (
-                  <div className="space-y-2 max-h-[780px] overflow-auto pr-1">
-                    {medicationSchedules.map((schedule) => (
-                      <div key={schedule.id} className="rounded-2xl border bg-background p-3 hover:bg-muted/20 transition-colors">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <h3 className="text-sm font-semibold truncate">{schedule.name}</h3>
-                              <Badge
-                                variant={schedule.urgency_level === 'high' ? 'destructive' : schedule.urgency_level === 'low' ? 'secondary' : 'default'}
-                                className="text-[10px] rounded-lg"
-                              >
-                                {schedule.urgency_level ? schedule.urgency_level.toUpperCase() : "MEDIUM"}
-                              </Badge>
-                              <Badge variant={schedule.is_active ? 'default' : 'secondary'} className="text-[10px] rounded-lg">
-                                {schedule.is_active ? "Active" : "Inactive"}
-                              </Badge>
-                            </div>
-
-                            {schedule.description ? (
-                              <p className="text-[11px] text-muted-foreground mt-1 line-clamp-1">{schedule.description}</p>
-                            ) : null}
-
-                            <div className="mt-2 flex flex-wrap gap-1.5">
-                              <div className="rounded-xl bg-muted/40 px-2 py-1 text-[11px]">
-                                <span className="text-muted-foreground mr-1">Time</span>
-                                <span className="font-medium">{schedule.scheduled_times.join(", ")}</span>
-                              </div>
-                              <div className="rounded-xl bg-muted/40 px-2 py-1 text-[11px]">
-                                <span className="text-muted-foreground mr-1">Type</span>
-                                <span className="font-medium capitalize">{schedule.schedule_type}</span>
-                              </div>
-                              <div className="rounded-xl bg-muted/40 px-2 py-1 text-[11px]">
-                                <span className="text-muted-foreground mr-1">Grace</span>
-                                <span className="font-medium">{schedule.grace_period_minutes}m</span>
-                              </div>
-                              {schedule.dosage_type ? (
-                                <div className="rounded-xl bg-muted/40 px-2 py-1 text-[11px]">
-                                  <span className="text-muted-foreground mr-1">Dose</span>
-                                  <span className="font-medium">{schedule.dosage_count} {schedule.dosage_type}</span>
-                                </div>
-                              ) : null}
-                              {schedule.meal_timing ? (
-                                <div className="rounded-xl bg-muted/40 px-2 py-1 text-[11px] capitalize">
-                                  {schedule.meal_timing.replace("_", " ")}
-                                </div>
-                              ) : null}
-                            </div>
-
-                            {schedule.days_of_week && schedule.days_of_week.length > 0 ? (
-                              <p className="text-[11px] text-muted-foreground mt-2">
-                                {schedule.days_of_week.map((d) => dayNames[d].slice(0, 3)).join(", ")}
-                              </p>
-                            ) : null}
-
-                            {schedule.prescription ? (
-                              <p className="text-[11px] text-muted-foreground mt-1 line-clamp-1">
-                                <span className="text-foreground font-medium">Prescription:</span> {schedule.prescription}
-                              </p>
-                            ) : null}
-                          </div>
-
-                          <div className="flex flex-col gap-1.5 shrink-0">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleEditSchedule(schedule)}
-                              className="rounded-xl h-8 px-3 text-xs justify-start"
-                            >
-                              <Edit className="w-3.5 h-3.5 mr-1" />
-                              Edit
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleToggleActive(schedule.id)}
-                              className="rounded-xl h-8 px-3 text-xs justify-start"
-                            >
-                              <Power className={`w-3.5 h-3.5 mr-1 ${schedule.is_active ? '' : 'text-muted-foreground'}`} />
-                              {schedule.is_active ? "Deactivate" : "Activate"}
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            <MedicationSchedulesCard
+              schedules={medicationSchedules}
+              dayNames={dayNames}
+              onEdit={handleEditSchedule}
+              onToggleActive={handleToggleActive}
+              actionNode={
+                <MedicationScheduleDialog
+                  open={addScheduleOpen}
+                  onOpenChange={setAddScheduleOpen}
+                  scheduleForm={scheduleForm}
+                  setScheduleForm={setScheduleForm}
+                  addTimeSlot={addTimeSlot}
+                  updateTimeSlot={updateTimeSlot}
+                  removeTimeSlot={removeTimeSlot}
+                  toggleDayOfWeek={toggleDayOfWeek}
+                  handleAddSchedule={handleAddSchedule}
+                  isEditing={!!editingScheduleId}
+                  submitLabel={editingScheduleId ? 'Save Changes' : undefined}
+                />
+              }
+            />
           </div>
         </div>
 

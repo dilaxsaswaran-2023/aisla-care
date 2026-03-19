@@ -2,6 +2,7 @@ import { createPortal } from "react-dom";
 import { AlertCircle, RefreshCw, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { formatDateTime } from "@/lib/datetime";
+import { getAlertCategory, getAlertVisualStyle, isEmergencyAlert } from "@/lib/alert-ui";
 
 interface AlertItem {
   id: string;
@@ -30,16 +31,28 @@ export const AlertDetailModal = ({
   alert: AlertItem;
   onClose: () => void;
 }) => {
-  const isBudii = alert.source === "budii";
+  const isEmergency = isEmergencyAlert(alert as any);
+  const style = getAlertVisualStyle(alert as any);
+  const category = getAlertCategory(alert as any);
+
+  const typeLabel = isEmergency
+    ? "Emergency"
+    : category === "sos"
+      ? "SOS"
+      : category === "geofence"
+        ? "Geofence"
+        : category === "medication"
+          ? "Medication"
+          : "Inactivity";
 
   const modal = (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
       <div className="relative bg-card rounded-xl shadow-2xl w-full max-w-md border border-border overflow-hidden">
-        <div className={`flex items-center justify-between px-4 py-3 border-b border-border ${isBudii ? "bg-destructive/10" : "bg-amber-500/10"}`}>
+        <div className={`flex items-center justify-between px-4 py-3 border-b border-border ${style.container}`}>
           <div className="flex items-center gap-2">
-            <AlertCircle className={`w-4 h-4 ${isBudii ? "text-destructive" : "text-amber-600"}`} />
-            <span className="font-semibold text-sm">{isBudii ? "Critical Alert" : "Alert"}</span>
+            <AlertCircle className={`w-4 h-4 ${style.icon}`} />
+            <span className="font-semibold text-sm">{isEmergency ? "Critical Alert" : `${typeLabel} Alert`}</span>
           </div>
           <button onClick={onClose} title="Close" className="text-muted-foreground hover:text-foreground transition-colors">
             <X className="w-4 h-4" />
@@ -58,8 +71,9 @@ export const AlertDetailModal = ({
                 <p className="font-semibold">{detail.patient_name ?? alert.patient_name}</p>
               </div>
               <div className="flex gap-1.5 flex-wrap justify-end">
+                <Badge className={`text-[10px] ${style.badge}`}>{typeLabel}</Badge>
                 {detail.priority && (
-                  <Badge variant={detail.priority === "critical" ? "destructive" : "secondary"} className="text-[10px]">
+                  <Badge variant={detail.priority === "critical" || isEmergency ? "destructive" : "secondary"} className="text-[10px]">
                     {detail.priority}
                   </Badge>
                 )}

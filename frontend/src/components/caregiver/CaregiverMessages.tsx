@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -35,6 +35,8 @@ interface CaregiverMessagesProps {
   conversations: Conversation[];
   loading: boolean;
   onLoadConversations: () => void;
+  selectedContactId?: string;
+  onContactSelected?: () => void;
 }
 
 export const CaregiverMessages = ({
@@ -42,11 +44,25 @@ export const CaregiverMessages = ({
   conversations,
   loading,
   onLoadConversations,
+  selectedContactId,
+  onContactSelected,
 }: CaregiverMessagesProps) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuth();
   const { toast } = useToast();
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
+
+  // Auto-select contact when selectedContactId is provided from emergency banner
+  useEffect(() => {
+    if (selectedContactId && !selectedContact) {
+      const contact = contacts.find(c => c.id === selectedContactId);
+      if (contact) {
+        setSelectedContact(contact);
+        onContactSelected?.();
+      }
+    }
+  }, [selectedContactId, contacts, selectedContact, onContactSelected]);
   const [newChatOpen, setNewChatOpen] = useState(false);
   const [newChatSearch, setNewChatSearch] = useState("");
   const [tempConversations, setTempConversations] = useState<Conversation[]>(conversations);
@@ -57,6 +73,41 @@ export const CaregiverMessages = ({
     clearLatest,
     markConversationRead,
   } = useFirebaseChatNotifications(user?.id || null, selectedContact?.id || null);
+
+  const shouldShowChatToasts = useMemo(() => {
+    const params = new URLSearchParams(location.search);
+    const isMessagesTab = params.get("tab") === "messages";
+    const isSupportedPortalPath =
+      location.pathname.startsWith("/caregiver") || location.pathname.startsWith("/family");
+    return isMessagesTab && isSupportedPortalPath;
+  }, [location.pathname, location.search]);
+
+  const showChatToast = useCallback(
+    (senderName: string, description: string, contact?: Contact) => {
+      let dismissToast = () => {};
+
+      const { dismiss } = toast({
+        title: `New message from ${senderName}`,
+        description,
+        action: contact ? (
+          <ToastAction
+            altText="Open chat"
+            onClick={(e) => {
+              e.preventDefault();
+              setSelectedContact(contact);
+              markConversationRead(contact.id).catch(() => {});
+              dismissToast();
+            }}
+          >
+            Open
+          </ToastAction>
+        ) : undefined,
+      });
+
+      dismissToast = dismiss;
+    },
+    [toast, markConversationRead]
+  );
 
   const handleSelectContact = (contact: Contact) => {
     setSelectedContact(contact);
@@ -88,25 +139,14 @@ export const CaregiverMessages = ({
     (data: { sender_id: string; recipient_id: string; content: string; message_type: 'text' | 'audio' }) => {
       if (!user || data.recipient_id !== user.id) return;
 
-      if (selectedContact?.id !== data.sender_id) {
+      if (shouldShowChatToasts && selectedContact?.id !== data.sender_id) {
         const senderName = contactsMap.get(data.sender_id)?.name || "Contact";
         const contact = contactsMap.get(data.sender_id);
-        toast({
-          title: `New message from ${senderName}`,
-          description: data.message_type === "audio" ? "Sent you an audio message" : data.content,
-          action: contact ? (
-            <ToastAction
-              altText="Open chat"
-              onClick={(e) => {
-                e.preventDefault();
-                setSelectedContact(contact);
-                markConversationRead(contact.id).catch(() => {});
-              }}
-            >
-              Open
-            </ToastAction>
-          ) : undefined,
-        });
+        showChatToast(
+          senderName,
+          data.message_type === "audio" ? "Sent you an audio message" : data.content,
+          contact
+        );
       }
 
       setTempConversations((prev) => {
@@ -132,7 +172,7 @@ export const CaregiverMessages = ({
         );
       });
     },
-    [user, selectedContact?.id, toast, contactsMap, markConversationRead]
+    [user, selectedContact?.id, shouldShowChatToasts, contactsMap, showChatToast]
   );
 
   useSocket({
@@ -170,28 +210,21 @@ export const CaregiverMessages = ({
 
   useEffect(() => {
     if (!latestNotification) return;
+    if (!shouldShowChatToasts) {
+      clearLatest();
+      return;
+    }
+
     const sender = contactsMap.get(latestNotification.sender_id);
-    toast({
-      title: `New message from ${latestNotification.sender_name || 'Contact'}`,
-      description:
-        latestNotification.message_type === "audio"
-          ? "Sent you an audio message"
-          : latestNotification.content,
-      action: sender ? (
-        <ToastAction
-          altText="Open chat"
-          onClick={(e) => {
-            e.preventDefault();
-            setSelectedContact(sender);
-            markConversationRead(sender.id).catch(() => {});
-          }}
-        >
-          Open
-        </ToastAction>
-      ) : undefined,
-    });
+    showChatToast(
+      latestNotification.sender_name || "Contact",
+      latestNotification.message_type === "audio"
+        ? "Sent you an audio message"
+        : latestNotification.content,
+      sender
+    );
     clearLatest();
-  }, [latestNotification, clearLatest, toast, contactsMap, markConversationRead]);
+  }, [latestNotification, shouldShowChatToasts, clearLatest, contactsMap, showChatToast]);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
-from app.models.alert import Alert
+from app.models.sos_alert import SosAlert
 from app.services.monitor.schemas import MonitorEvent
 
 logger = logging.getLogger("monitor.sos")
@@ -45,22 +45,19 @@ def check_sos(event: MonitorEvent, db: Session) -> list:
         return []
 
     # Get the most recent previous SOS alert, excluding the current one
-    # (the current Alert record is already committed when this runs)
+    # (the current SosAlert record is already committed when this runs)
     try:
         event_uuid = uuid.UUID(event.event_id)
     except ValueError:
         event_uuid = None
 
     query = (
-        db.query(Alert)
-        .filter(
-            Alert.patient_id == patient_uuid,
-            Alert.alert_type == "sos",
-        )
-        .order_by(desc(Alert.created_at))
+        db.query(SosAlert)
+        .filter(SosAlert.patient_id == patient_uuid)
+        .order_by(desc(SosAlert.created_at))
     )
     if event_uuid is not None:
-        query = query.filter(Alert.id != event_uuid)
+        query = query.filter(SosAlert.id != event_uuid)
 
     last_sos = query.first()
 
