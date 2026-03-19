@@ -1,5 +1,6 @@
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -17,6 +18,7 @@ from app.services.firebase_helper import push_patient_alert
 logger = logging.getLogger("medication.scheduler")
 
 scheduler = BackgroundScheduler()
+LOCAL_TZ = ZoneInfo("Asia/Colombo")
 
 
 def _to_sunday_based_weekday(dt: datetime) -> int:
@@ -35,34 +37,32 @@ def _is_schedule_due_on_date(schedule: MedicationSchedule, date_value: datetime)
     return _to_sunday_based_weekday(date_value) in days
 
 
-def _parse_schedule_occurrences(schedule: MedicationSchedule, now_utc: datetime) -> list[tuple[datetime, datetime]]:
+def _parse_schedule_occurrences(schedule: MedicationSchedule, now_local: datetime) -> list[tuple[datetime, datetime]]:
     occurrences: list[tuple[datetime, datetime]] = []
     scheduled_times = schedule.scheduled_times or []
 
-    # Check today and yesterday so late-night windows are not missed.
-    for day_offset in [0, -1]:
-        base_date = now_utc + timedelta(days=day_offset)
-        if not _is_schedule_due_on_date(schedule, base_date):
+    base_date = now_local
+    if not _is_schedule_due_on_date(schedule, base_date):
+        return occurrences
+
+    for time_value in scheduled_times:
+        try:
+            hour, minute = map(int, str(time_value).split(":"))
+        except Exception:
+            logger.warning(f"[MEDICATION_SCHEDULER] Invalid scheduled time '{time_value}' for schedule {schedule.id}")
             continue
 
-        for time_value in scheduled_times:
-            try:
-                hour, minute = map(int, str(time_value).split(":"))
-            except Exception:
-                logger.warning(f"[MEDICATION_SCHEDULER] Invalid scheduled time '{time_value}' for schedule {schedule.id}")
-                continue
-
-            scheduled_for_at = base_date.replace(hour=hour, minute=minute, second=0, microsecond=0)
-            due_at = scheduled_for_at + timedelta(minutes=int(schedule.grace_period_minutes or 60))
-            if due_at <= now_utc:
-                occurrences.append((scheduled_for_at, due_at))
+        scheduled_for_at = base_date.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        due_at = scheduled_for_at + timedelta(minutes=int(schedule.grace_period_minutes or 60))
+        if now_local >= due_at:
+            occurrences.append((scheduled_for_at, due_at))
 
     return occurrences
 
 
 def run_medication_check_for_all_patients():
     db = None
-    now_utc = datetime.now(timezone.utc)
+    now_local = datetime.now(LOCAL_TZ)
 
     try:
         db = SessionLocal()
@@ -81,7 +81,7 @@ def run_medication_check_for_all_patients():
             return
 
         for schedule in schedules:
-            occurrences = _parse_schedule_occurrences(schedule, now_utc)
+            occurrences = _parse_schedule_occurrences(schedule, now_local)
             if not occurrences:
                 continue
 
@@ -104,7 +104,7 @@ def run_medication_check_for_all_patients():
                         due_at=due_at,
                         status="pending",
                         created_by=schedule.created_by,
-                        checked_at=now_utc,
+                        checked_at=now_local,
                         notes=f"Auto-created by scheduler for {schedule.name}",
                     )
                     db.add(monitor)
@@ -113,16 +113,16 @@ def run_medication_check_for_all_patients():
                 if monitor.taken_at:
                     if monitor.status != "taken":
                         monitor.status = "taken"
-                        monitor.checked_at = now_utc
+                        monitor.checked_at = now_local
                     continue
 
                 # Not taken and due window passed -> missed
-                if now_utc < due_at:
+                if now_local < due_at:
                     continue
 
                 if monitor.status != "missed":
                     monitor.status = "missed"
-                    monitor.checked_at = now_utc
+                    monitor.checked_at = now_local
 
                 existing_breach = (
                     db.query(MedicationScheduleBreach)
@@ -140,7 +140,7 @@ def run_medication_check_for_all_patients():
                     patient_id=schedule.patient_id,
                     medication_schedule_id=schedule.id,
                     monitor_id=monitor.id,
-                    breach_found_at=now_utc,
+                    breach_found_at=now_local,
                     created_by=schedule.created_by,
                     reason=reason,
                     status="active",

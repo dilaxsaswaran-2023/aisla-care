@@ -1,5 +1,6 @@
 import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
@@ -13,6 +14,7 @@ from app.models.user import User
 from app.services.audit_log_service import log_audit_event, build_field_changes
 
 router = APIRouter(prefix="/api/medication-schedules", tags=["medication-schedules"])
+LOCAL_TZ = ZoneInfo("Asia/Colombo")
 
 # Pydantic models
 class MedicationScheduleCreate(BaseModel):
@@ -130,9 +132,9 @@ def list_medication_monitor_status(
             except ValueError:
                 raise HTTPException(status_code=400, detail="Invalid date. Use YYYY-MM-DD")
         else:
-            target_date = datetime.now(timezone.utc).date()
+            target_date = datetime.now(LOCAL_TZ).date()
 
-        day_start = datetime.combine(target_date, datetime.min.time(), tzinfo=timezone.utc)
+        day_start = datetime.combine(target_date, datetime.min.time(), tzinfo=LOCAL_TZ)
         day_end = day_start + timedelta(days=1)
 
         schedules = db.query(MedicationSchedule).filter(
@@ -151,7 +153,7 @@ def list_medication_monitor_status(
             for row in monitor_rows
         }
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(LOCAL_TZ)
         items = []
         for schedule in schedules:
             if not _is_schedule_due_on_date(schedule, day_start):
@@ -620,7 +622,7 @@ def mark_medication_taken(
     monitor.taken_at = taken_at
     monitor.status = "taken"
     monitor.notes = body.notes
-    monitor.checked_at = datetime.now(timezone.utc)
+    monitor.checked_at = datetime.now(LOCAL_TZ)
 
     db.commit()
     db.refresh(monitor)
