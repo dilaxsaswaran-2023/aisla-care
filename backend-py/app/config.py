@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     # ── Monitor checks ────────────────────────────────────────────────────────
     check_sos_enabled: bool = True
     check_geofence_enabled: bool = True
-    check_inactive_enabled: bool = False
+    check_inactive_enabled: bool = True
     check_medication_enabled: bool = True
 
     model_config = SettingsConfigDict(
