@@ -146,6 +146,11 @@ def my_alerts(
                 "priority": item.priority or "high",
                 "title": "SOS Emergency Alert",
                 "message": item.message or "Patient triggered SOS button",
+                "voice_transcription": (
+                    item.message
+                    if item.message and item.message != "Patient triggered SOS button"
+                    else None
+                ),
                 "is_read": bool(item.is_read),
                 "is_acknowledged": bool(getattr(linked_patient_alert, "is_acknowledged", False)),
                 "acknowledged_via": getattr(linked_patient_alert, "acknowledged_via", None),

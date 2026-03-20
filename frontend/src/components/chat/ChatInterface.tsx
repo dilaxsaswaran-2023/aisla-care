@@ -68,18 +68,25 @@ const ChatInterface = ({ recipientId, recipientName, maxMessageWidth = 'max-w-fu
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const upsertMessage = useCallback((msg: ChatMessage) => {
+    setMessages((prev) => {
+      const existingIndex = prev.findIndex((m) => m.id === msg.id);
+      if (existingIndex === -1) return [...prev, msg];
+      const next = [...prev];
+      next[existingIndex] = { ...next[existingIndex], ...msg };
+      return next;
+    });
+  }, []);
+
   // ── Socket callbacks ─────────────────────────────────────────────────────
   const handleNewMessage = useCallback((msg: ChatMessage) => {
     if (
       (msg.sender_id === recipientId && msg.recipient_id === user?.id) ||
       (msg.sender_id === user?.id && msg.recipient_id === recipientId)
     ) {
-      setMessages((prev) => {
-        if (prev.find((m) => m.id === msg.id)) return prev;
-        return [...prev, msg];
-      });
+      upsertMessage(msg);
     }
-  }, [recipientId, user?.id]);
+  }, [recipientId, user?.id, upsertMessage]);
 
   const handleMessageStatus = useCallback(
     ({ message_id, status }: { message_id: string; status: string }) => {
@@ -264,7 +271,7 @@ const ChatInterface = ({ recipientId, recipientName, maxMessageWidth = 'max-w-fu
     form.append('recipient_id', recipientId);
     try {
       const res = (await api.postForm('/messages/upload-audio', form)) as ChatMessage;
-      setMessages((prev) => [...prev, res]);
+      upsertMessage(res);
 
       createFirebaseChatNotification({
         sender_id: user.id,

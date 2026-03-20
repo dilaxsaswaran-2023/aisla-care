@@ -7,6 +7,7 @@ the frontend can listen for real-time updates.
 """
 import os
 import logging
+import time
 from datetime import date, datetime
 from pathlib import Path
 from uuid import UUID
@@ -16,6 +17,44 @@ from firebase_admin import credentials, firestore
 
 _db = None
 logger = logging.getLogger("firebase.helper")
+_next_retry_ts = 0.0
+_last_error_signature = ""
+_last_error_log_ts = 0.0
+_retry_cooldown_seconds = int(os.getenv("FIREBASE_RETRY_COOLDOWN_SECONDS", "120"))
+_repeat_log_interval_seconds = int(os.getenv("FIREBASE_REPEAT_LOG_INTERVAL_SECONDS", "60"))
+_auth_error_cooldown_seconds = int(os.getenv("FIREBASE_AUTH_ERROR_COOLDOWN_SECONDS", "900"))
+_write_timeout_seconds = float(os.getenv("FIREBASE_WRITE_TIMEOUT_SECONDS", "8"))
+
+
+def _in_cooldown() -> bool:
+    return time.time() < _next_retry_ts
+
+
+def _mark_failure(error_signature: str, cooldown_seconds: int | None = None):
+    """Activate cooldown and avoid repeating the same noisy error logs."""
+    global _next_retry_ts, _last_error_signature, _last_error_log_ts
+
+    now = time.time()
+    cooldown = cooldown_seconds if cooldown_seconds is not None else _retry_cooldown_seconds
+    _next_retry_ts = now + cooldown
+
+    should_log = (
+        error_signature != _last_error_signature
+        or (now - _last_error_log_ts) >= _repeat_log_interval_seconds
+    )
+    if should_log:
+        logger.error(
+            "[FIREBASE] %s. Suppressing retries for %ss",
+            error_signature,
+            cooldown,
+        )
+        _last_error_signature = error_signature
+        _last_error_log_ts = now
+
+
+def _is_invalid_jwt_signature_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return "invalid jwt signature" in message or "invalid_grant" in message
 
 
 def _candidate_credential_paths() -> list[Path]:
@@ -70,6 +109,8 @@ def _init():
     global _db
     if _db is not None:
         return
+    if _in_cooldown():
+        return
 
     try:
         if not firebase_admin._apps:
@@ -90,7 +131,7 @@ def _init():
                 logger.info("[FIREBASE] Firebase Admin initialized using Application Default Credentials")
         _db = firestore.client()
     except Exception as exc:
-        logger.exception("[FIREBASE] Initialization failed: %s", exc)
+        _mark_failure(f"Initialization failed: {exc}")
         _db = None
 
 
@@ -101,9 +142,13 @@ def push_patient_alert(alert_dict: dict) -> bool:
 
     Returns True on success, False if Firebase is not configured or on error.
     """
+    if _in_cooldown():
+        return False
+
     _init()
     if _db is None:
-        logger.warning("[FIREBASE] Firestore client not available; push skipped")
+        if not _in_cooldown():
+            logger.warning("[FIREBASE] Firestore client not available; push skipped")
         return False
 
     try:
@@ -118,9 +163,15 @@ def push_patient_alert(alert_dict: dict) -> bool:
             normalized_payload["patient_alert_id"] = str(doc_id)
 
         safe_payload = _to_firestore_safe(normalized_payload)
-        _db.collection("patient_alerts").document(str(doc_id)).set(safe_payload)
+        # Disable Firestore client-side retries to avoid repeated noisy auth stack traces.
+        _db.collection("patient_alerts").document(str(doc_id)).set(
+            safe_payload,
+            retry=None,
+            timeout=_write_timeout_seconds,
+        )
         logger.info("[FIREBASE] Pushed patient_alert doc_id=%s patient_id=%s", doc_id, alert_dict.get("patient_id"))
         return True
     except Exception as exc:
-        logger.exception("[FIREBASE] Push failed for doc_id=%s: %s", alert_dict.get("id") or alert_dict.get("_id"), exc)
+        cooldown = _auth_error_cooldown_seconds if _is_invalid_jwt_signature_error(exc) else None
+        _mark_failure(f"Push failed for doc_id={doc_id}: {exc}", cooldown_seconds=cooldown)
         return False

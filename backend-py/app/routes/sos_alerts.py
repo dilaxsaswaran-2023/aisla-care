@@ -62,6 +62,9 @@ async def create_sos_alert(
     db: Session = Depends(get_db),
 ):
     user_id = uuid.UUID(current_user["userId"])
+    transcribed_message = (body.voice_transcription or "").strip()
+    explicit_message = (body.message or "").strip()
+    stored_message = explicit_message or transcribed_message or "Patient triggered SOS button"
 
     latest_gps = (
         db.query(GpsLocation)
@@ -74,8 +77,8 @@ async def create_sos_alert(
         patient_id=user_id,
         event_id=str(uuid.uuid4()),
         alert_type="sos",
-        message=body.message or "Patient triggered SOS button",
-        priority=get_sos_priority(body.voice_transcription or "") or "high",
+        message=stored_message,
+        priority=get_sos_priority(transcribed_message) or "high",
     )
     db.add(sos_alert)
     db.flush()
@@ -90,7 +93,7 @@ async def create_sos_alert(
             case="SOS_REPEAT",
             title="SOS Alert - Repeated Trigger",
             alert_type="SOS_REPEAT",
-            message=body.message or "Repeated SOS detected within 8 minutes",
+            message=explicit_message or transcribed_message or "Repeated SOS detected within 8 minutes",
             status="active",
             source="sos",
         )
@@ -116,7 +119,7 @@ async def create_sos_alert(
             "priority": sos_alert.priority,
             "latitude": latest_gps.latitude if latest_gps else None,
             "longitude": latest_gps.longitude if latest_gps else None,
-            "voice_transcription": bool(body.voice_transcription),
+            "voice_transcription": bool(transcribed_message),
         },
         severity="critical",
     )
@@ -129,6 +132,8 @@ async def create_sos_alert(
             "event_id": str(sos_alert.id),
             "alert_type": "SOS_REPEAT",
             "title": "SOS Alert - Repeated Trigger",
+            "message": patient_alert.message,
+            "voice_transcription": transcribed_message or None,
             "is_read": False,
             "created_at": patient_alert.created_at.isoformat() if patient_alert.created_at else None,
             "updated_at": patient_alert.updated_at.isoformat() if patient_alert.updated_at else None,
@@ -153,6 +158,7 @@ async def create_sos_alert(
 
     response = sos_alert.to_dict()
     response["sos_case"] = sos_case
+    response["voice_transcription"] = transcribed_message or None
     return response
 
 

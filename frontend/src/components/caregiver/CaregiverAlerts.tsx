@@ -11,6 +11,10 @@ const AlertCard = ({ alert }: { alert: AlertItem }) => {
   const style = getAlertVisualStyle(alert);
   const category = getAlertCategory(alert);
   const isEmergency = isEmergencyAlert(alert);
+  const priority = String(alert.priority || "").toLowerCase();
+  const isHighPrioritySOS = category === "sos" && (priority === "high" || priority === "critical");
+  const isMediumPrioritySOS = category === "sos" && priority === "medium";
+  const isLowPrioritySOS = category === "sos" && priority === "low";
 
   const typeLabel = isEmergency
     ? "Emergency"
@@ -38,9 +42,90 @@ const AlertCard = ({ alert }: { alert: AlertItem }) => {
               <Badge className={`text-[10px] h-4 px-1.5 ${style.badge}`}>
                 {typeLabel}
               </Badge>
+              {isHighPrioritySOS && (
+                <Badge variant="destructive" className="text-[10px] h-4 px-1.5 font-bold animate-pulse">
+                  HIGH PRIORITY
+                </Badge>
+              )}
+              {isMediumPrioritySOS && (
+                <Badge className="text-[10px] h-4 px-1.5 font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                  MEDIUM PRIORITY
+                </Badge>
+              )}
+              {isLowPrioritySOS && (
+                <Badge className="text-[10px] h-4 px-1.5 font-bold bg-sky-100 text-sky-800 border border-sky-300">
+                  LOW PRIORITY
+                </Badge>
+              )}
             </div>
             <p className="text-sm font-medium">{alert.title}</p>
             <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{alert.message}</p>
+            {isHighPrioritySOS && (
+              <div className="mt-2 rounded-md border border-red-300 bg-red-50 px-2 py-1.5">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-1.5">
+                    <div className="relative h-2.5 w-2.5">
+                      <span className="absolute inset-0 rounded-full bg-red-500 animate-ping" />
+                      <span className="relative block h-2.5 w-2.5 rounded-full bg-red-600" />
+                    </div>
+                    <span className="text-[11px] font-semibold text-red-700 uppercase tracking-wide">
+                      Emergency Signal
+                    </span>
+                  </div>
+                  <div className="flex items-end gap-0.5 h-4">
+                    <span className="w-1 h-2 rounded-sm bg-red-500 animate-pulse" />
+                    <span className="w-1 h-4 rounded-sm bg-red-500 animate-pulse [animation-delay:120ms]" />
+                    <span className="w-1 h-3 rounded-sm bg-red-500 animate-pulse [animation-delay:240ms]" />
+                    <span className="w-1 h-4 rounded-sm bg-red-500 animate-pulse [animation-delay:360ms]" />
+                    <span className="w-1 h-2 rounded-sm bg-red-500 animate-pulse [animation-delay:480ms]" />
+                  </div>
+                </div>
+                <p className="mt-1 text-[11px] text-red-700">
+                  Immediate caregiver attention required.
+                </p>
+              </div>
+            )}
+            {isMediumPrioritySOS && (
+              <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-1.5">
+                    <div className="relative h-2.5 w-2.5">
+                      <span className="absolute inset-0 rounded-full bg-amber-400 animate-ping" />
+                      <span className="relative block h-2.5 w-2.5 rounded-full bg-amber-500" />
+                    </div>
+                    <span className="text-[11px] font-semibold text-amber-800 uppercase tracking-wide">
+                      Watch Signal
+                    </span>
+                  </div>
+                  <div className="flex items-end gap-0.5 h-4">
+                    <span className="w-1 h-2 rounded-sm bg-amber-500 animate-pulse" />
+                    <span className="w-1 h-3 rounded-sm bg-amber-500 animate-pulse [animation-delay:160ms]" />
+                    <span className="w-1 h-2 rounded-sm bg-amber-500 animate-pulse [animation-delay:320ms]" />
+                  </div>
+                </div>
+                <p className="mt-1 text-[11px] text-amber-800">
+                  Elevated risk. Monitor patient and follow up soon.
+                </p>
+              </div>
+            )}
+            {isLowPrioritySOS && (
+              <div className="mt-2 rounded-md border border-sky-300 bg-sky-50 px-2 py-1.5">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-1.5">
+                    <span className="h-2.5 w-2.5 rounded-full bg-sky-500" />
+                    <span className="text-[11px] font-semibold text-sky-800 uppercase tracking-wide">
+                      Info Signal
+                    </span>
+                  </div>
+                  <div className="h-1.5 w-12 rounded-full bg-sky-200 overflow-hidden">
+                    <div className="h-full w-1/3 bg-sky-500" />
+                  </div>
+                </div>
+                <p className="mt-1 text-[11px] text-sky-800">
+                  Low urgency. Continue routine monitoring.
+                </p>
+              </div>
+            )}
             {alert.voice_transcription && (
               <p className="text-xs italic text-muted-foreground mt-1">
                 "{alert.voice_transcription}"
