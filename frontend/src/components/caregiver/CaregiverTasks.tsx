@@ -3,10 +3,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { RefreshCw } from "lucide-react";
+import { addDays, addWeeks, format, startOfWeek, subDays, subWeeks } from "date-fns";
 import { api } from "@/lib/api";
-import { getTodayLocalDateString } from "@/lib/datetime";
 import { useToast } from "@/hooks/use-toast";
 import MedicationScheduleDialog from "@/components/patient/MedicationScheduleDialog";
+import MedicationCalendarView from "@/components/caregiver/medication/MedicationCalendarView";
 import {
   MedicationFlowCard,
   MedicationMonitorItem,
@@ -25,6 +26,11 @@ export const CaregiverTasks = ({ patients }: { patients: PatientContact[] }) => 
   const [schedules, setSchedules] = useState<MedicationScheduleItem[]>([]);
   const [monitorItems, setMonitorItems] = useState<MedicationMonitorItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [calendarLoading, setCalendarLoading] = useState(false);
+  const [calendarMode, setCalendarMode] = useState<"day" | "week">("day");
+  const [calendarDate, setCalendarDate] = useState<Date>(new Date());
+  const [calendarDayItems, setCalendarDayItems] = useState<MedicationMonitorItem[]>([]);
+  const [calendarWeekItems, setCalendarWeekItems] = useState<Record<string, MedicationMonitorItem[]>>({});
   
   // Schedule management state
   const [addScheduleOpen, setAddScheduleOpen] = useState(false);
@@ -60,13 +66,21 @@ export const CaregiverTasks = ({ patients }: { patients: PatientContact[] }) => 
     [patients, selectedPatientId]
   );
 
-  const loadMedicationData = async (patientId: string) => {
+  const toDateKey = (date: Date): string => format(date, "yyyy-MM-dd");
+
+  const getWeekDates = (date: Date): Date[] => {
+    const weekStart = startOfWeek(date, { weekStartsOn: 0 });
+    return Array.from({ length: 7 }, (_, index) => addDays(weekStart, index));
+  };
+
+  const loadMedicationData = async (patientId: string, targetDate: Date) => {
     if (!patientId) return;
     setLoading(true);
     try {
+      const dateKey = toDateKey(targetDate);
       const [schedulesData, monitorData] = await Promise.all([
         api.get(`/medication-schedules?patient_id=${patientId}`) as Promise<MedicationScheduleItem[]>,
-        api.get(`/medication-schedules/monitor?patient_id=${patientId}&date=${getTodayLocalDateString()}`) as Promise<{ items?: MedicationMonitorItem[] }>,
+        api.get(`/medication-schedules/monitor?patient_id=${patientId}&date=${dateKey}`) as Promise<{ items?: MedicationMonitorItem[] }>,
       ]);
 
       setSchedules(Array.isArray(schedulesData) ? schedulesData : []);
@@ -79,11 +93,56 @@ export const CaregiverTasks = ({ patients }: { patients: PatientContact[] }) => 
     }
   };
 
+  const loadCalendarData = async (
+    patientId: string,
+    targetDate: Date,
+    mode: "day" | "week",
+  ) => {
+    if (!patientId) return;
+    setCalendarLoading(true);
+    try {
+      if (mode === "day") {
+        const dayKey = toDateKey(targetDate);
+        const dayData = await api.get(
+          `/medication-schedules/monitor?patient_id=${patientId}&date=${dayKey}`,
+        ) as { items?: MedicationMonitorItem[] };
+
+        setCalendarDayItems(Array.isArray(dayData?.items) ? dayData.items : []);
+        setCalendarWeekItems({});
+      } else {
+        const weekDates = getWeekDates(targetDate);
+        const weekResponses = await Promise.all(
+          weekDates.map((date) =>
+            api.get(
+              `/medication-schedules/monitor?patient_id=${patientId}&date=${toDateKey(date)}`,
+            ) as Promise<{ items?: MedicationMonitorItem[] }>
+          ),
+        );
+
+        const weekMap: Record<string, MedicationMonitorItem[]> = {};
+        weekDates.forEach((date, index) => {
+          const key = toDateKey(date);
+          weekMap[key] = Array.isArray(weekResponses[index]?.items) ? weekResponses[index].items : [];
+        });
+        setCalendarWeekItems(weekMap);
+        setCalendarDayItems(weekMap[toDateKey(targetDate)] || []);
+      }
+    } catch {
+      setCalendarDayItems([]);
+      setCalendarWeekItems({});
+    } finally {
+      setCalendarLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (selectedPatientId) {
-      void loadMedicationData(selectedPatientId);
+      void Promise.all([
+        loadMedicationData(selectedPatientId, calendarDate),
+        loadCalendarData(selectedPatientId, calendarDate, calendarMode),
+      ]);
     }
-  }, [selectedPatientId]);
+  }, [selectedPatientId, calendarDate, calendarMode]);
 
   const resetScheduleForm = () => {
     setScheduleForm({
@@ -131,6 +190,7 @@ export const CaregiverTasks = ({ patients }: { patients: PatientContact[] }) => 
       setAddScheduleOpen(false);
       resetScheduleForm();
       setEditingScheduleId(null);
+      void refreshAllMedicationPanels();
     } catch (error: any) {
       toast({
         title: "Error",
@@ -176,6 +236,7 @@ export const CaregiverTasks = ({ patients }: { patients: PatientContact[] }) => 
       setToggleConfirmOpen(false);
       setScheduleToToggle(null);
       toast({ title: 'Success', description: 'Schedule status updated' });
+      void refreshAllMedicationPanels();
     } catch (err: any) {
       toast({ title: 'Error', description: err.message || 'Failed to toggle schedule', variant: 'destructive' });
     }
@@ -211,6 +272,30 @@ export const CaregiverTasks = ({ patients }: { patients: PatientContact[] }) => 
     }));
   };
 
+  const handleCalendarPrevious = () => {
+    setCalendarDate((previous) => (
+      calendarMode === "day" ? subDays(previous, 1) : subWeeks(previous, 1)
+    ));
+  };
+
+  const handleCalendarNext = () => {
+    setCalendarDate((previous) => (
+      calendarMode === "day" ? addDays(previous, 1) : addWeeks(previous, 1)
+    ));
+  };
+
+  const handleCalendarToday = () => {
+    setCalendarDate(new Date());
+  };
+
+  const refreshAllMedicationPanels = async () => {
+    if (!selectedPatientId) return;
+    await Promise.all([
+      loadMedicationData(selectedPatientId, calendarDate),
+      loadCalendarData(selectedPatientId, calendarDate, calendarMode),
+    ]);
+  };
+
   return (
     <div className="space-y-4">
       <Card className="care-card">
@@ -225,7 +310,7 @@ export const CaregiverTasks = ({ patients }: { patients: PatientContact[] }) => 
               size="sm"
               className="gap-2"
               disabled={!selectedPatientId || loading}
-              onClick={() => selectedPatientId && loadMedicationData(selectedPatientId)}
+              onClick={() => selectedPatientId && refreshAllMedicationPanels()}
             >
               <RefreshCw className="w-3.5 h-3.5" />
               Refresh
@@ -275,10 +360,25 @@ export const CaregiverTasks = ({ patients }: { patients: PatientContact[] }) => 
         <MedicationFlowCard
           items={monitorItems}
           loading={loading}
-          title="Today's Medication Monitor"
-          emptyLabel="No monitor items for today."
+          title={`Medication Monitor - ${format(calendarDate, "MMM d, yyyy")}`}
+          emptyLabel="No monitor items for the selected date."
           loadingLabel="Loading monitor status..."
           className="care-card"
+        />
+      </div>
+
+      <div className="w-full xl:w-[100%]">
+        <MedicationCalendarView
+          patientName={selectedPatientName}
+          mode={calendarMode}
+          onModeChange={setCalendarMode}
+          referenceDate={calendarDate}
+          onPrevious={handleCalendarPrevious}
+          onNext={handleCalendarNext}
+          onToday={handleCalendarToday}
+          dayItems={calendarDayItems}
+          weekItemsByDate={calendarWeekItems}
+          loading={calendarLoading}
         />
       </div>
 

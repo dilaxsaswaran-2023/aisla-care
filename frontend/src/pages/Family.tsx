@@ -8,7 +8,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
 import FamilyStatus from "@/components/family/FamilyStatus";
 import FamilyLocation from "@/components/family/FamilyLocation";
-import { CaregiverMessages } from "@/components/caregiver/CaregiverMessages";
+import { ChatMessages } from "@/components/caregiver/ChatMessages";
 import { FamilyAlertBanner } from "@/components/family/FamilyAlertBanner";
 import { Activity, MapPin, MessageSquare } from "lucide-react";
 import { useFirebaseAlerts } from "@/hooks/useFirebaseAlerts";
@@ -308,7 +308,7 @@ const Family = () => {
       )}
 
       {activeTab === "messages" && (
-        <CaregiverMessages
+        <ChatMessages
           contacts={messageContacts}
           conversations={conversations}
           loading={loadingMessages}

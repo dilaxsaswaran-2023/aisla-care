@@ -45,6 +45,19 @@ settings = get_settings()
 import logging
 logger = logging.getLogger(__name__)
 
+
+def _parse_cors_origins(raw_value: str) -> list[str]:
+    return [origin.strip() for origin in (raw_value or "").split(",") if origin.strip()]
+
+
+configured_origins = _parse_cors_origins(settings.cors_origin)
+if not configured_origins:
+    configured_origins = ["http://localhost:8030"]
+
+# Keep dev origins to avoid local-web breakage when deployed API is reused locally.
+default_dev_origins = ["http://localhost:8030", "http://127.0.0.1:8030", "http://localhost:3000"]
+allowed_origins = list(dict.fromkeys(configured_origins + default_dev_origins))
+
 # Track online users: {user_id: sid}
 _online_users: dict[str, str] = {}
 _sid_to_user: dict[str, str] = {}
@@ -99,7 +112,7 @@ async def lifespan(app: FastAPI):
 # ── Socket.IO server ─────────────────────────────────────────────────────────
 sio = socketio.AsyncServer(
     async_mode="asgi",
-    cors_allowed_origins=settings.cors_origin,
+    cors_allowed_origins=allowed_origins,
 )
 
 
@@ -289,12 +302,6 @@ app = FastAPI(
 app.state.sio = sio
 
 # CORS - Add this BEFORE registering routes
-cors_origins = [settings.cors_origin]
-if settings.cors_origin not in cors_origins:
-    cors_origins.append(settings.cors_origin)
-
-# Additional allowed origins for development
-allowed_origins = list(set(cors_origins + ["http://localhost:8030", "http://127.0.0.1:8030", "http://localhost:3000"]))
 
 app.add_middleware(
     CORSMiddleware,

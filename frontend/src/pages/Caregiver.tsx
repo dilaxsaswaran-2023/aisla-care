@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useIsMobile } from "@/hooks/use-mobile";
 import {
-  MapPin, AlertCircle, Calendar, Activity, RefreshCw, Users, MessageSquare
+  MapPin, AlertCircle, Calendar, Activity, RefreshCw, Users, MessageSquare, Cpu
 } from "lucide-react";
 import PortalLayout from "@/components/layout/PortalLayout";
 import { api } from "@/lib/api";
@@ -11,10 +11,11 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { CaregiverOverview } from "@/components/caregiver/CaregiverOverview";
 import { CaregiverPatients } from "@/components/caregiver/CaregiverPatients";
-import { CaregiverMessages } from "@/components/caregiver/CaregiverMessages";
+import { ChatMessages } from "@/components/caregiver/ChatMessages";
 import { CaregiverLocation } from "@/components/caregiver/CaregiverLocation";
 import { CaregiverTasks } from "@/components/caregiver/CaregiverTasks";
 import { CaregiverAlerts } from "@/components/caregiver/CaregiverAlerts";
+import { CaregiverDevices } from "@/components/caregiver/CaregiverDevices";
 import { NotificationDropdown } from "@/components/caregiver/NotificationDropdown";
 import { EmergencyBanner } from "@/components/caregiver/EmergencyBanner";
 import { useFirebaseAlerts } from "@/hooks/useFirebaseAlerts";
@@ -62,6 +63,7 @@ const navItems = [
   { label: "Messages", value: "messages", icon: MessageSquare },
   { label: "Location", value: "map", icon: MapPin },
   { label: "Schedules", value: "schedules", icon: Calendar },
+  { label: "Devices", value: "devicesx", icon: Cpu },
   { label: "Alerts", value: "alerts", icon: AlertCircle },
 ];
 
@@ -86,7 +88,15 @@ const Caregiver = () => {
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const rawTab = params.get('tab') || 'overview';
-    setActiveTab(rawTab === 'tasks' ? 'schedules' : rawTab);
+    if (rawTab === 'tasks') {
+      setActiveTab('schedules');
+      return;
+    }
+    if (rawTab === 'devices') {
+      setActiveTab('devicesx');
+      return;
+    }
+    setActiveTab(rawTab);
   }, [location.search]);
 
   const handleTabChange = (tab: string) => navigate(`?tab=${tab}`, { replace: true });
@@ -262,6 +272,7 @@ const Caregiver = () => {
     messages: { title: "Messages", desc: "Communicate with patients and families" },
     map: { title: "Location Tracking", desc: "GPS monitoring of patient locations" },
     schedules: { title: "Medication Schedules", desc: "View patient schedules and daily medication status" },
+    devicesx: { title: "Device Integrations", desc: "Integrate and configure healthcare devices for monitoring" },
     alerts: { title: "Alerts", desc: "Monitor and respond to patient alerts" },
   };
   const current = pageTitles[activeTab] ?? pageTitles.overview;
@@ -320,7 +331,7 @@ const Caregiver = () => {
       )}
       {activeTab === "patients" && <CaregiverPatients isMobile={isMobile} />}
       {activeTab === "messages" && (
-        <CaregiverMessages
+        <ChatMessages
           contacts={messageContacts}
           conversations={conversations}
           loading={loading}
@@ -331,6 +342,7 @@ const Caregiver = () => {
       )}
       {activeTab === "map" && <CaregiverLocation />}
       {activeTab === "schedules" && <CaregiverTasks patients={patients} />}
+      {activeTab === "devicesx" && <CaregiverDevices />}
       {activeTab === "alerts" && (
         <CaregiverAlerts
           alerts={alerts}
